@@ -31,6 +31,22 @@ def _int(v, default):
         return default
 
 
+def _setup_token_cache(m, cfg: dict):
+    """初始化 main 模块的 AES token 缓存（run_once 与 query_steps 共用）。"""
+    aes_key = (cfg.get("AES_KEY") or os.environ.get("AES_KEY") or "").strip()
+    m.time_bj = m.get_beijing_time()
+    m.encrypt_support = False
+    m.user_tokens = getattr(m, "user_tokens", dict())
+    if aes_key.encode("utf-8") and len(aes_key.encode("utf-8")) == 16:
+        m.aes_key = aes_key.encode("utf-8")
+        m.encrypt_support = True
+        if not m.user_tokens:
+            m.user_tokens = m.prepare_user_tokens()
+    else:
+        m.user_tokens = dict()
+        print("AES_KEY 未设置或无效，本次将直接登录（不缓存 token）")
+
+
 def run_once(cfg: dict, trigger: str = "manual") -> dict:
     """执行一次刷步。cfg 为页面表单保存的配置字典。返回日志与结果摘要。"""
     with _run_lock:
@@ -43,18 +59,7 @@ def run_once(cfg: dict, trigger: str = "manual") -> dict:
         try:
             with contextlib.redirect_stdout(log_buf):
                 # ---- AES token 持久化支持 ----
-                aes_key = (cfg.get("AES_KEY") or os.environ.get("AES_KEY") or "").strip()
-                m.time_bj = m.get_beijing_time()
-                m.encrypt_support = False
-                m.user_tokens = getattr(m, "user_tokens", dict())
-                if aes_key.encode("utf-8") and len(aes_key.encode("utf-8")) == 16:
-                    m.aes_key = aes_key.encode("utf-8")
-                    m.encrypt_support = True
-                    if not m.user_tokens:
-                        m.user_tokens = m.prepare_user_tokens()
-                else:
-                    m.user_tokens = dict()
-                    print("AES_KEY 未设置或无效，本次将直接登录（不缓存 token）")
+                _setup_token_cache(m, cfg)
 
                 # ---- 配置 ----
                 config = {
@@ -142,3 +147,48 @@ def run_once(cfg: dict, trigger: str = "manual") -> dict:
         log_text = log_buf.getvalue() + f"\n[{trigger}] {summary}"
         return {"time": started, "trigger": trigger, "success": success,
                 "summary": summary, "log": log_text}
+
+
+def query_steps(cfg: dict) -> dict:
+    """查询各账号今日步数（只读操作，不修改步数）。
+    返回 {"ok": True, "results": [{"user", "steps", "error"}], "log": str}
+    """
+    with _run_lock:
+        import main as m
+
+        log_buf = io.StringIO()
+        results = []
+        try:
+            with contextlib.redirect_stdout(log_buf):
+                _setup_token_cache(m, cfg)
+                users = (cfg.get("USER") or "").strip()
+                passwords = (cfg.get("PWD") or "").strip()
+                if not users or not passwords:
+                    return {"ok": False, "error": "请先填写账号和密码", "results": [], "log": ""}
+                user_list = users.split("#")
+                passwd_list = passwords.split("#")
+                if len(user_list) != len(passwd_list):
+                    return {"ok": False,
+                            "error": f"账号数[{len(user_list)}]和密码数[{len(passwd_list)}]不匹配",
+                            "results": [], "log": ""}
+                gap = float(_int(cfg.get("SLEEP_GAP"), 5))
+                for idx, (user_mi, passwd_mi) in enumerate(zip(user_list, passwd_list)):
+                    if idx:
+                        import time as _t
+                        _t.sleep(gap)
+                    runner = m.MiMotionRunner(user_mi, passwd_mi)
+                    steps, err, ok = runner.login_and_query_step()
+                    print(f"[{idx + 1}/{len(user_list)}] {runner.log_str}")
+                    results.append({
+                        "user": m.desensitize_user_name(user_mi),
+                        "steps": steps,
+                        "error": err,
+                        "success": ok,
+                    })
+                if m.encrypt_support:
+                    m.persist_user_tokens()
+        except Exception:
+            print(traceback.format_exc())
+            return {"ok": False, "error": "查询异常：" + traceback.format_exc().splitlines()[-1],
+                    "results": results, "log": log_buf.getvalue()}
+        return {"ok": True, "results": results, "log": log_buf.getvalue()}

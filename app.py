@@ -258,6 +258,21 @@ def run():
     return jsonify({"ok": True, "msg": "已开始执行，请稍后刷新日志查看结果"})
 
 
+@app.route("/query", methods=["POST"])
+@login_required
+def query():
+    """查询各账号今日步数（同步返回，只读操作）"""
+    if not check_csrf():
+        return jsonify({"ok": False, "error": "CSRF 校验失败"}), 400
+    cfg = load_config()
+    if not cfg["USER"].strip() or not cfg["PWD"].strip():
+        return jsonify({"ok": False, "error": "请先填写账号和密码"}), 400
+    try:
+        return jsonify(runner.query_steps(cfg))
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"查询异常: {e}", "results": [], "log": ""}), 500
+
+
 @app.route("/logs")
 @login_required
 def logs():

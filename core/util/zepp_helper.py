@@ -1,10 +1,11 @@
 import json
 import re
 import time
+import base64
 import traceback
 import urllib
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytz
 import requests
@@ -238,6 +239,47 @@ def renew_login_token(login_token) -> (str | None, str | None):
         return None, "请求失败：%s" % result
     login_token = resp["token_info"]["login_token"]
     return login_token, None
+
+
+# 查询今日步数：GET band_data.json，解析最新日期 summary 里的 stp.ttl
+def query_today_steps(app_token, user_id) -> (int | None, str | None):
+    bj = get_beijing_time()
+    today = bj.strftime("%Y-%m-%d")
+    from_date = (bj - timedelta(days=3)).strftime("%Y-%m-%d")
+    params = {
+        "query_type": "detail",
+        "device_type": "android_phone",
+        "userid": user_id,
+        "from_date": from_date,
+        "to_date": today,
+    }
+    headers = {
+        "User-Agent": "MiFit6.14.0 (M2007J1SC; Android 12; Density/2.75)",
+        "Accept-Encoding": "gzip",
+        "appname": "com.xiaomi.hm.health",
+        "apptoken": app_token,
+    }
+    resp = requests.get("https://api-mifit-cn.huami.com/v1/data/band_data.json",
+                        params=params, headers=headers, timeout=10)
+    if resp.status_code != 200:
+        return None, "查询请求异常：%d" % resp.status_code
+    day_list = resp.json().get("data") or []
+    target = None
+    for d in day_list:
+        if d.get("date_time") == today:
+            target = d  # 优先取今天的记录
+    if target is None and day_list:
+        target = day_list[-1]  # 没有今天的就取最近一天
+    if target is None:
+        return None, "接口未返回步数数据"
+    try:
+        summary = json.loads(base64.b64decode(target["summary"]))
+        ttl = (summary.get("stp") or {}).get("ttl")
+        if ttl is None:
+            return None, "步数字段缺失"
+        return int(ttl), None
+    except Exception:
+        return None, "解析步数数据异常:%s" % traceback.format_exc().splitlines()[-1]
 
 
 def post_fake_brand_data(step, app_token, userid):

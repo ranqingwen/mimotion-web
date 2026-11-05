@@ -18,6 +18,7 @@
 - **定时调度**：按北京时间执行，与服务器时区无关；每个时间点在 0~59 分钟内随机执行，执行完自动重新随机，避免固定时间被风控
 - **执行控制**：仅保存（等定时执行）/ 保存并立即执行一次 / 取消自动执行 / 重新随机执行时间，状态持久化，重启不丢
 - **执行日志**：网页内查看最近 50 次执行记录（成功/失败、随机步数、接口返回）
+- **步数查询**：一键查询各账号当日实际步数（只读操作，不改数据），结果直接显示在页面
 - **推送通知（可选）**：PushPlus / 企业微信 Webhook / Telegram
 - **Token 缓存**：配置 16 位 AES_KEY 后加密缓存登录 token，避免频繁登录触发 429
 
@@ -30,20 +31,33 @@
 
 ## 🚀 快速开始（Docker Compose）
 
-```bash
-# 1. 克隆仓库
-git clone https://github.com/ranqingwen/mimotion-web.git
-cd mimotion-web
+镜像已通过 GitHub Actions 自动构建并发布到 GitHub Container Registry（公开可见），**拉取即用，无需在服务器上构建**：
 
-# 2. 修改 docker-compose.yml 中的 WEB_USER / WEB_PASS（公网部署必改！）
-
-# 3. 构建并启动
-docker compose up -d --build
+```yaml
+services:
+  mimotion-web:
+    image: ghcr.io/ranqingwen/mimotion-web:latest
+    container_name: mimotion-web
+    restart: unless-stopped
+    ports:
+      - "8000:8000"     # 左边是宿主机端口，可自行修改
+    environment:
+      - WEB_USER=admin        # ⚠️ Web 登录用户名，公网部署必改
+      - WEB_PASS=admin123     # ⚠️ Web 登录密码，公网部署必改
+      - TZ=Asia/Shanghai      # 时区
+    volumes:
+      - ./data:/app/data      # 数据持久化：配置、日志、加密 token 都在这里
 ```
 
-### docker-compose.yml 完整内容
+```bash
+docker compose pull && docker compose up -d   # 拉取镜像并启动，几秒完成
+```
 
-仓库根目录自带 `docker-compose.yml`，内容如下（可直接复制使用，改好用户名密码即可）：
+访问 `http://服务器IP:8000`，使用 `WEB_USER` / `WEB_PASS` 登录。所有配置在网页里填写并保存后存于 `data/config.json`，容器重建不丢失。
+
+### 本地构建部署（克隆或上传项目文件）
+
+无法访问 ghcr.io、或想修改代码自用时，可以用项目自带的 `docker-compose.yml` 本地构建：
 
 ```yaml
 services:
@@ -61,88 +75,25 @@ services:
       - ./data:/app/data      # 数据持久化：配置、日志、加密 token 都在这里
 ```
 
-> 说明：`build: .` 需要构建上下文（即本项目目录）。所有配置在网页里填写并保存后存于 `data/config.json`，容器重建不丢失。
-
-### 使用预构建镜像（ghcr.io，部署最快）
-
-项目通过 GitHub Actions 自动构建并发布镜像到 GitHub Container Registry，直接拉取即可，**无需在服务器上构建**（首次可用）：
-
-```yaml
-services:
-  mimotion-web:
-    image: ghcr.io/ranqingwen/mimotion-web:latest
-    container_name: mimotion-web
-    restart: unless-stopped
-    ports:
-      - "8000:8000"     # 左边是宿主机端口，可自行修改
-    environment:
-      - WEB_USER=admin        # ⚠️ Web 登录用户名，公网部署必改
-      - WEB_PASS=admin123     # ⚠️ Web 登录密码，公网部署必改
-      - TZ=Asia/Shanghai      # 时区
-    volumes:
-      - ./data:/app/data      # 数据持久化（位于编排工作目录下，可用绝对路径指定）
-```
-
 ```bash
-docker compose pull && docker compose up -d   # 拉取镜像并启动，几秒完成
+git clone https://github.com/ranqingwen/mimotion-web.git
+cd mimotion-web
+docker compose up -d --build
 ```
 
-> 提示：首次发布后镜像默认为**私有**，需到 GitHub → 头像 → Packages → `mimotion-web` → Package settings → Change visibility 设为 **Public**，他人（包括你的服务器）才能免登录拉取。
-
-### 从 GitHub 拉取构建（免上传文件）
-
-Compose 的 `build:` 支持直接指向 Git 仓库。用 `docker compose` 命令行或任何支持 Compose 编排的环境（NAS 的 Container Manager、可视化容器工具等），将以下内容保存为 `docker-compose.yml` 并启动即可，机器上不需要有任何项目文件（需先确认仓库已公开）：
-
-```yaml
-services:
-  mimotion-web:
-    build: https://github.com/ranqingwen/mimotion-web.git#main
-    container_name: mimotion-web
-    restart: unless-stopped
-    ports:
-      - "8000:8000"     # 左边是宿主机端口，可自行修改
-    environment:
-      - WEB_USER=admin        # ⚠️ Web 登录用户名，公网部署必改
-      - WEB_PASS=admin123     # ⚠️ Web 登录密码，公网部署必改
-      - TZ=Asia/Shanghai      # 时区
-    volumes:
-      - ./data:/app/data      # 数据持久化（位于编排工作目录下，可用绝对路径指定）
-```
-
-- `#main` 表示使用 main 分支；Docker 会自动 clone 仓库并按 Dockerfile 构建
-- 后续更新代码后，重新执行 `docker compose up -d --build`（或在你的容器管理工具里点「重建」）即可拉取最新代码
-- 数据卷 `./data` 相对于编排工作目录，建议改为绝对路径（如 `/opt/mimotion-data:/app/data`）方便备份
-
-### 手动构建镜像方式（适用于无法使用构建上下文的场景）
-
-```bash
-docker build -t mimotion-web .
-```
-
-然后把上面 compose 中的 `build:` 替换为 `image: mimotion-web` 即可。
-
-访问 `http://服务器IP:8000`，使用 `WEB_USER` / `WEB_PASS` 登录。
+也可以将仓库 zip 上传到服务器解压后在目录内执行同样的命令（在可视化工具中选择该路径创建编排同理，`build: .` 需要构建上下文）。
 
 ## 🧩 更多部署方式（NAS / 可视化工具 / 命令行通用）
 
-只要环境里有 Docker（或 Docker Compose），以下写法都通用：
+只要环境里有 Docker（或 Docker Compose），把上面「快速开始」的 yaml 保存为 `docker-compose.yml`（改好 `WEB_USER` / `WEB_PASS`）：
 
-**方式一：预构建镜像 / Compose 从 GitHub 拉取（免上传文件）**
-
-- 用上面「使用预构建镜像」的 yaml（`image: ghcr.io/...`，拉取即用，最快）
-- 或用「从 GitHub 拉取构建」的 yaml（`build: 仓库地址`，在本地构建）
-
-改好 `WEB_USER` / `WEB_PASS` 后：
-
-- 命令行：`docker compose up -d --build`
+- 命令行：`docker compose pull && docker compose up -d`
 - NAS（群晖 Container Manager、威联通 Container Station 等）：导入该 yaml 创建项目/应用即可
 - 其他可视化容器工具：用「自定义 compose/编排」功能粘贴部署
 
-**方式二：上传项目文件 + 本地构建**
+后续更新版本：`docker compose pull && docker compose up -d`（或在你的容器管理工具里点「重建/拉取最新镜像」）。
 
-1. 将仓库 zip 上传到服务器（如 `/opt`）并解压，得到含 `docker-compose.yml` 的目录
-2. 修改 `docker-compose.yml` 中的 `WEB_USER` / `WEB_PASS`
-3. 在该目录执行 `docker compose up -d --build`（或在可视化工具中选择该路径创建编排，`build: .` 需要构建上下文）
+**本地构建**则把 `image:` 替换为 `build: .`（或仓库地址 `build: https://github.com/ranqingwen/mimotion-web.git#main`），执行 `docker compose up -d --build`。
 
 **通用建议**：
 - 防火墙及云服务器安全组放行 `8000` 端口后访问 `http://服务器IP:8000`
@@ -192,7 +143,8 @@ docker build -t mimotion-web .
 
 - 核心刷步逻辑：[TonyJiangWJ/mimotion](https://github.com/TonyJiangWJ/mimotion)（Apache-2.0），其又基于 [xunichanghuan/mimotion](https://github.com/xunichanghuan/mimotion) 与 [huangshihai/mimotion](https://github.com/huangshihai/mimotion)
 - 登录接口 AES 加密密钥参考：[hanximeng/Zepp_API](https://github.com/hanximeng/Zepp_API)
-- 本项目新增部分（Web 界面、调度、Docker 化）：[ranqingwen](https://github.com/ranqingwen)
+- 步数查询接口（`band_data.json` 端点及 `summary` 步数解析方式）参考：[bentasker/zepp_to_influxdb](https://github.com/bentasker/zepp_to_influxdb)
+- 本项目新增部分（Web 界面、调度、Docker 化、步数查询）：[ranqingwen](https://github.com/ranqingwen)
 
 ## 📄 License
 

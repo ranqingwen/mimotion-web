@@ -174,6 +174,19 @@ class MiMotionRunner:
         user_tokens[self.user] = user_token_info
         return app_token
 
+    # 查询今日步数（登录复用 token 缓存，不修改任何数据）
+    def login_and_query_step(self):
+        if self.invalid:
+            return None, "账号或密码配置有误", False
+        app_token = self.login()
+        if app_token is None:
+            return None, "登陆失败！", False
+        self.log_str += "登录成功，查询今日步数\n"
+        steps, msg = zeppHelper.query_today_steps(app_token, self.user_id)
+        if steps is None:
+            return None, "查询失败：%s" % msg, False
+        return steps, None, True
+
     # 主函数
     def login_and_post_step(self, min_step, max_step):
         if self.invalid:

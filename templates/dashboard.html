@@ -46,6 +46,16 @@
   .btn-sched.resume { background:#16a34a; } .btn-sched.resume:hover { background:#15803d; }
   .btn-add { background:#334155; padding:9px 18px; font-size:13px; }
   .btn-add:hover { background:#475569; }
+  .btn-query { background:#0e7490; } .btn-query:hover { background:#155e75; }
+  .btn-query:disabled { background:#475569; cursor:not-allowed; }
+  .query-box {
+    margin-top:14px; display:none; background:#0f172a;
+    border:1px solid #334155; border-radius:10px; padding:14px 16px;
+  }
+  .query-box .q-item { display:flex; align-items:center; gap:10px; padding:6px 0; font-size:13.5px; }
+  .query-box .q-user { color:#94a3b8; font-family:Consolas, monospace; }
+  .query-box .q-steps { color:#4ade80; font-weight:700; font-size:16px; }
+  .query-box .q-err { color:#f87171; font-size:12.5px; }
   .actions { display:flex; gap:14px; margin-top:18px; align-items:center; }
   .status { padding:12px 16px; border-radius:8px; font-size:13px; margin-top:14px; display:none; }
   .status.ok { display:block; background:rgba(22,163,74,.15); border:1px solid rgba(22,163,74,.4); color:#86efac; }
@@ -226,11 +236,13 @@
           {% if cfg.SCHEDULE_ENABLED == 'False' %}▶ 恢复自动执行{% else %}⏸ 取消自动执行{% endif %}
         </button>
         <button type="button" class="btn btn-add" onclick="reshuffle()">🎲 重新随机执行时间</button>
+        <button type="button" class="btn btn-query" id="query-btn" onclick="querySteps()">🔍 查询今日步数</button>
       </div>
       <div class="muted" style="margin-top:10px;">
-        「💾 仅保存（不立即执行）」只保存，等定时时间到才会执行（配合「⏸/▶ 取消自动执行」控制定时开关）；「▶ 保存并立即执行一次」保存当前配置并马上运行一次，不影响定时任务。
+        「💾 仅保存（不立即执行）」只保存，等定时时间到才会执行（配合「⏸/▶ 取消自动执行」控制定时开关）；「▶ 保存并立即执行一次」保存当前配置并马上运行一次，不影响定时任务；「🔍 查询今日步数」只读查询当前实际步数，不修改任何数据。
       </div>
       <div class="status" id="status"></div>
+      <div id="query-result" style="display:none;"></div>
       <div class="muted">⚠ 公网部署请务必修改 docker-compose.yml 中的 WEB_USER / WEB_PASS，并建议套一层 HTTPS 反代。</div>
     </div>
   </form>
@@ -403,6 +415,32 @@ async function loadLogs(){
   }
 }
 loadLogs();
+
+/* 查询今日步数 */
+async function querySteps(){
+  const btn = document.getElementById('query-btn');
+  const box = document.getElementById('query-result');
+  btn.disabled = true; btn.textContent = '查询中...';
+  box.className = 'query-box'; box.style.display = 'block';
+  box.innerHTML = '<div class="q-item">正在登录 Zepp 并查询，请稍候（多账号时每个间隔 N 秒）...</div>';
+  try{
+    const data = await postForm('/query');
+    if(!data.ok){
+      box.innerHTML = `<div class="q-item"><span class="q-err">❌ ${escapeHtml(data.error||'查询失败')}</span></div>`;
+    }else if(!data.results.length){
+      box.innerHTML = '<div class="q-item"><span class="q-err">未返回结果</span></div>';
+    }else{
+      box.innerHTML = data.results.map(r => r.success
+        ? `<div class="q-item"><span class="q-user">${escapeHtml(r.user)}</span>
+             今日步数：<span class="q-steps">${r.steps}</span> 步</div>`
+        : `<div class="q-item"><span class="q-user">${escapeHtml(r.user)}</span>
+             <span class="q-err">❌ ${escapeHtml(r.error||'查询失败')}</span></div>`).join('');
+    }
+  }catch(e){
+    box.innerHTML = `<div class="q-item"><span class="q-err">❌ 请求异常：${escapeHtml(String(e))}</span></div>`;
+  }
+  btn.disabled = false; btn.textContent = '🔍 查询今日步数';
+}
 </script>
 </body>
 </html>
