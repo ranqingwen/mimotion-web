@@ -1,0 +1,6 @@
+repo_tmp
+repo.zip
+data
+__pycache__
+*.pyc
+.git

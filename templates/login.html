@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 - mimotion 管理后台</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    min-height:100vh; display:flex; align-items:center; justify-content:center;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color:#e2e8f0;
+  }
+  .card {
+    width: 360px; padding: 40px 36px;
+    background: rgba(30,41,59,.85); border:1px solid #334155;
+    border-radius: 16px; box-shadow: 0 20px 50px rgba(0,0,0,.5);
+  }
+  h1 { font-size:22px; margin-bottom:6px; color:#f8fafc; }
+  .sub { font-size:13px; color:#94a3b8; margin-bottom:28px; }
+  label { display:block; font-size:13px; color:#94a3b8; margin:14px 0 6px; }
+  input {
+    width:100%; padding:11px 14px; font-size:14px;
+    background:#0f172a; border:1px solid #334155; border-radius:8px;
+    color:#e2e8f0; outline:none; transition:border .2s;
+  }
+  input:focus { border-color:#38bdf8; }
+  button {
+    width:100%; margin-top:24px; padding:12px; font-size:15px; font-weight:600;
+    background:#0284c7; color:#fff; border:none; border-radius:8px; cursor:pointer;
+    transition:background .2s;
+  }
+  button:hover { background:#0369a1; }
+  .error {
+    margin-top:16px; padding:10px 14px; font-size:13px;
+    background:rgba(220,38,38,.15); border:1px solid rgba(220,38,38,.4);
+    border-radius:8px; color:#fca5a5;
+  }
+  .emoji { font-size:34px; margin-bottom:12px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="emoji">👟</div>
+  <h1>mimotion 管理后台</h1>
+  <div class="sub">小米运动（Zepp Life）自动刷步数</div>
+  <form method="post" action="{{ url_for('login') }}">
+    <label>用户名</label>
+    <input name="username" autocomplete="username" required>
+    <label>密码</label>
+    <input name="password" type="password" autocomplete="current-password" required>
+    <button type="submit">登 录</button>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  </form>
+</div>
+</body>
+</html>

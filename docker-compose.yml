@@ -1,0 +1,14 @@
+services:
+  mimotion-web:
+    build: .
+    container_name: mimotion-web
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # ⚠️ 放公网前务必修改这两项！
+      - WEB_USER=admin
+      - WEB_PASS=admin123
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./data:/app/data

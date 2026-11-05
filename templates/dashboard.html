@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mimotion 管理后台</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background:#0f172a; color:#e2e8f0; min-height:100vh;
+  }
+  header {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 32px; background:#1e293b; border-bottom:1px solid #334155;
+    position:sticky; top:0; z-index:10; flex-wrap:wrap; gap:10px;
+  }
+  header h1 { font-size:18px; }
+  header h1 span { color:#38bdf8; }
+  .user-box { display:flex; align-items:center; gap:14px; font-size:13px; color:#94a3b8; flex-wrap:wrap; }
+  .user-box a { color:#f87171; text-decoration:none; }
+  main { max-width:860px; margin:28px auto; padding:0 20px; }
+  .card {
+    background:#1e293b; border:1px solid #334155; border-radius:14px;
+    padding:24px; margin-bottom:20px;
+  }
+  .card h2 { font-size:15px; color:#38bdf8; margin-bottom:16px; display:flex; align-items:center; gap:8px; }
+  label { display:block; font-size:12.5px; color:#94a3b8; margin:12px 0 6px; }
+  label .tip { color:#64748b; font-size:11.5px; }
+  input, select {
+    width:100%; padding:10px 13px; font-size:14px;
+    background:#0f172a; border:1px solid #334155; border-radius:8px;
+    color:#e2e8f0; outline:none; transition:border .2s;
+  }
+  input:focus, select:focus { border-color:#38bdf8; }
+  .row { display:flex; gap:14px; }
+  .row > div { flex:1; }
+  .btn {
+    padding:11px 22px; font-size:14px; font-weight:600; border:none;
+    border-radius:8px; cursor:pointer; transition:.2s; color:#fff;
+  }
+  .btn-primary { background:#0284c7; } .btn-primary:hover { background:#0369a1; }
+  .btn-run { background:#16a34a; } .btn-run:hover { background:#15803d; }
+  .btn-run:disabled { background:#475569; cursor:not-allowed; }
+  .btn-sched { background:#dc2626; } .btn-sched:hover { background:#b91c1c; }
+  .btn-sched.resume { background:#16a34a; } .btn-sched.resume:hover { background:#15803d; }
+  .btn-add { background:#334155; padding:9px 18px; font-size:13px; }
+  .btn-add:hover { background:#475569; }
+  .actions { display:flex; gap:14px; margin-top:18px; align-items:center; }
+  .status { padding:12px 16px; border-radius:8px; font-size:13px; margin-top:14px; display:none; }
+  .status.ok { display:block; background:rgba(22,163,74,.15); border:1px solid rgba(22,163,74,.4); color:#86efac; }
+  .status.err { display:block; background:rgba(220,38,38,.15); border:1px solid rgba(220,38,38,.4); color:#fca5a5; }
+  .next-run {
+    display:inline-block; padding:6px 14px; background:#0f172a;
+    border:1px solid #334155; border-radius:999px; font-size:13px; color:#7dd3fc;
+  }
+  /* 账号行 */
+  .acct-row {
+    display:flex; gap:10px; align-items:center; margin-bottom:12px;
+    background:#0f172a; border:1px solid #334155; border-radius:10px; padding:12px;
+  }
+  .acct-row .num {
+    flex:0 0 auto; width:26px; height:26px; border-radius:50%;
+    background:#334155; color:#7dd3fc; font-size:12px; font-weight:600;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .acct-row .field { flex:1; }
+  .acct-row .field label { margin:0 0 4px; font-size:11px; }
+  .icon-btn {
+    flex:0 0 auto; width:34px; height:34px; border:1px solid #334155;
+    background:#1e293b; border-radius:8px; cursor:pointer; font-size:15px;
+    color:#94a3b8; display:flex; align-items:center; justify-content:center; transition:.2s;
+  }
+  .icon-btn:hover { color:#f87171; border-color:#f87171; }
+  .icon-btn.eye:hover { color:#7dd3fc; border-color:#38bdf8; }
+  .log {
+    max-height:420px; overflow:auto; background:#020617;
+    border:1px solid #1e293b; border-radius:10px; padding:16px;
+    font-family:Consolas, "Courier New", monospace; font-size:12.5px;
+    line-height:1.7; white-space:pre-wrap; color:#a5b4fc;
+  }
+  .log-item { margin-bottom:18px; padding-bottom:14px; border-bottom:1px dashed #1e293b; }
+  .log-item:last-child { border-bottom:none; margin-bottom:0; }
+  .log-head { color:#e2e8f0; font-size:13px; margin-bottom:6px; }
+  .badge { padding:2px 10px; border-radius:999px; font-size:11px; margin-left:8px; }
+  .badge.ok { background:rgba(22,163,74,.2); color:#4ade80; }
+  .badge.fail { background:rgba(220,38,38,.2); color:#f87171; }
+  .muted { color:#64748b; font-size:12px; margin-top:14px; }
+  .check-line { display:flex; align-items:flex-start; gap:8px; font-size:12.5px; color:#94a3b8; cursor:pointer; margin-top:14px; }
+  .check-line .chk { width:auto; margin:0; accent-color:#0284c7; flex:0 0 auto; margin-top:2px; }
+  .mode-switch { display:flex; gap:12px; margin-bottom:4px; flex-wrap:wrap; }
+  .mode-opt {
+    display:flex; align-items:center; gap:8px; flex:1; min-width:220px;
+    background:#0f172a; border:1px solid #334155; border-radius:10px;
+    padding:12px 14px; cursor:pointer; transition:border .2s; flex-wrap:wrap;
+  }
+  .mode-opt:hover { border-color:#38bdf8; }
+  .mode-opt .chk { width:auto; margin:0; accent-color:#0284c7; }
+  .mode-opt b { font-size:13.5px; color:#e2e8f0; }
+  .action-card { border:1px solid #38bdf8; box-shadow:0 0 24px rgba(56,189,248,.08); }
+  .action-card .actions { margin-top:0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>👟 mimotion <span>管理后台</span></h1>
+  <div class="user-box">
+    <span>下次自动执行（北京时间）：<b class="next-run" id="next-run">{{ next_run_time }}</b></span>
+    <span>{{ session['user'] }}</span>
+    <a href="{{ url_for('logout') }}">退出</a>
+  </div>
+</header>
+
+<main>
+  <form id="cfg-form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="SCHEDULE_ENABLED" value="{{ cfg.SCHEDULE_ENABLED }}">
+
+    <!-- 账号配置 -->
+    <div class="card">
+      <h2>🔐 账号配置
+        <button type="button" class="btn btn-add" style="margin-left:auto;" onclick="addAccount('','')">➕ 新增账号</button>
+      </h2>
+      <label>小米运动（Zepp Life）账号，手机号或邮箱 <span class="tip">不是小米账号；每个账号一行，账号和密码一一对应</span></label>
+      <div id="accounts"></div>
+    </div>
+
+    <!-- 步数与调度 -->
+    <div class="card">
+      <h2>🏃 步数与调度</h2>
+      <!-- 步数模式切换 -->
+      <label style="margin-top:4px;">步数模式 <span class="tip">（两种模式只能一个生效）</span></label>
+      <div class="mode-switch">
+        <label class="mode-opt">
+          <input type="radio" name="STEP_MODE" value="range" class="chk"
+                 {% if cfg.STEP_MODE != 'fixed' %}checked{% endif %} onchange="toggleStepMode()">
+          <b>范围随机</b><span class="tip">每天多次执行时步数自然变化</span>
+        </label>
+        <label class="mode-opt">
+          <input type="radio" name="STEP_MODE" value="fixed" class="chk"
+                 {% if cfg.STEP_MODE == 'fixed' %}checked{% endif %} onchange="toggleStepMode()">
+          <b>固定步数</b><span class="tip">实时修改步数用，改完立即执行马上生效</span>
+        </label>
+      </div>
+
+      <!-- 范围随机模式 -->
+      <div id="range-block">
+        <div class="row">
+          <div>
+            <label>最小步数</label>
+            <input name="MIN_STEP" value="{{ cfg.MIN_STEP }}">
+          </div>
+          <div>
+            <label>最大步数</label>
+            <input name="MAX_STEP" value="{{ cfg.MAX_STEP }}">
+          </div>
+        </div>
+        <label class="check-line">
+          <input type="checkbox" name="SCALE_BY_TIME" value="True" class="chk"
+                 {% if cfg.SCALE_BY_TIME != 'False' %}checked{% endif %} onchange="scaleTip()">
+          步数随时间线性递增：勾选后，填写的范围表示北京时间 22:00 时达到的最大值，当天每次执行按当前时间占比缩放（模拟真人一天步数逐渐累积，22:00 后达到设定范围）；不勾选则每次执行直接在填写范围内随机
+        </label>
+        <div class="muted" id="scale-tip" style="margin:6px 0 0;"></div>
+      </div>
+
+      <!-- 固定步数模式 -->
+      <div id="fixed-block" style="display:none;">
+        <label>固定步数 <span class="tip">（每次执行都设为这个确切值，不受时间缩放影响；适合临时把步数改成某个目标值）</span></label>
+        <input name="FIXED_STEP" value="{{ cfg.FIXED_STEP }}" placeholder="如 20000">
+      </div>
+      <label>每天执行时间（北京时间 UTC+8，0-23 点，英文逗号分隔）<span class="tip" id="hours-tip">调度固定按北京时间执行，与服务器时区无关；建议一天多次执行让步数递增</span></label>
+      <input name="HOURS" value="{{ cfg.HOURS }}">
+      <div class="muted" id="random-tip" style="margin:6px 0 0;">🎲 随机机制：每次执行会在你填写的时间点的 0~59 分钟内随机（如填 9 点，实际可能在 9:36 执行），每次执行完后自动重新随机下一次的分钟，避免固定时间被风控。</div>
+      <div class="row" style="margin-top:6px;">
+        <div>
+          <label>多账号间隔（秒）</label>
+          <input name="SLEEP_GAP" value="{{ cfg.SLEEP_GAP }}">
+        </div>
+        <div>
+          <label>并发模式</label>
+          <select name="USE_CONCURRENT">
+            <option value="False" {% if cfg.USE_CONCURRENT != 'True' %}selected{% endif %}>关闭（顺序执行）</option>
+            <option value="True" {% if cfg.USE_CONCURRENT == 'True' %}selected{% endif %}>开启（实验性）</option>
+          </select>
+        </div>
+      </div>
+      <label>AES_KEY <span class="tip">（16 个字符，用于加密缓存登录 token 避免频繁登录 429；留空则每次直接登录）</span></label>
+      <input name="AES_KEY" value="{{ cfg.AES_KEY }}" placeholder="可选，16 位字符串">
+    </div>
+
+    <!-- 推送配置 -->
+    <div class="card">
+      <h2>📢 推送通知（可选）</h2>
+      <div class="row">
+        <div>
+          <label>PushPlus Token</label>
+          <input name="PUSH_PLUS_TOKEN" value="{{ cfg.PUSH_PLUS_TOKEN }}">
+        </div>
+        <div>
+          <label>PushPlus 推送整点</label>
+          <input name="PUSH_PLUS_HOUR" value="{{ cfg.PUSH_PLUS_HOUR }}" placeholder="如 21，留空每次都推">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>企业微信 Webhook Key</label>
+          <input name="PUSH_WECHAT_WEBHOOK_KEY" value="{{ cfg.PUSH_WECHAT_WEBHOOK_KEY }}">
+        </div>
+        <div>
+          <label>Telegram Bot Token / Chat ID</label>
+          <div class="row">
+            <input name="TELEGRAM_BOT_TOKEN" value="{{ cfg.TELEGRAM_BOT_TOKEN }}" placeholder="Bot Token">
+            <input name="TELEGRAM_CHAT_ID" value="{{ cfg.TELEGRAM_CHAT_ID }}" placeholder="Chat ID">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 操作栏 -->
+    <div class="card action-card">
+      <h2>🚀 保存与执行</h2>
+      <div class="actions">
+        <button type="button" class="btn btn-primary" onclick="saveCfg()">💾 仅保存（不立即执行）</button>
+        <button type="button" class="btn btn-run" id="run-btn" onclick="runNow()">▶ 保存并立即执行一次</button>
+        <button type="button" class="btn btn-sched {% if cfg.SCHEDULE_ENABLED == 'False' %}resume{% endif %}" id="sched-btn" onclick="toggleSchedule()">
+          {% if cfg.SCHEDULE_ENABLED == 'False' %}▶ 恢复自动执行{% else %}⏸ 取消自动执行{% endif %}
+        </button>
+        <button type="button" class="btn btn-add" onclick="reshuffle()">🎲 重新随机执行时间</button>
+      </div>
+      <div class="muted" style="margin-top:10px;">
+        「💾 仅保存（不立即执行）」只保存，等定时时间到才会执行（配合「⏸/▶ 取消自动执行」控制定时开关）；「▶ 保存并立即执行一次」保存当前配置并马上运行一次，不影响定时任务。
+      </div>
+      <div class="status" id="status"></div>
+      <div class="muted">⚠ 公网部署请务必修改 docker-compose.yml 中的 WEB_USER / WEB_PASS，并建议套一层 HTTPS 反代。</div>
+    </div>
+  </form>
+
+  <!-- 执行日志 -->
+  <div class="card">
+    <h2>📋 执行日志 <button type="button" class="btn btn-primary" style="margin-left:auto;padding:6px 16px;font-size:12px;" onclick="loadLogs()">刷新</button></h2>
+    <div class="log" id="logs">加载中...</div>
+  </div>
+</main>
+
+<script>
+/* ---------- 动态账号行 ---------- */
+let acctSeq = 0;
+function addAccount(user, pwd){
+  acctSeq++;
+  const div = document.createElement('div');
+  div.className = 'acct-row';
+  div.innerHTML = `
+    <div class="num">${acctSeq}</div>
+    <div class="field">
+      <label>账号 ${acctSeq}</label>
+      <input name="account_user" value="${escapeHtml(user)}" placeholder="手机号或邮箱">
+    </div>
+    <div class="field">
+      <label>密码 ${acctSeq}</label>
+      <div class="row" style="gap:6px;">
+        <input name="account_pwd" type="password" value="${escapeHtml(pwd)}" placeholder="密码">
+        <button type="button" class="icon-btn eye" title="显示/隐藏密码" onclick="togglePwd(this)">👁</button>
+      </div>
+    </div>
+    <button type="button" class="icon-btn" title="删除此账号" onclick="removeAccount(this)">✕</button>`;
+  document.getElementById('accounts').appendChild(div);
+  renumber();
+}
+function removeAccount(btn){
+  const rows = document.querySelectorAll('#accounts .acct-row');
+  if(rows.length <= 1){ show('status','status err','至少保留一个账号'); return; }
+  btn.closest('.acct-row').remove();
+  renumber();
+}
+function renumber(){
+  document.querySelectorAll('#accounts .acct-row').forEach((row, i) => {
+    row.querySelector('.num').textContent = i + 1;
+    const labels = row.querySelectorAll('.field label');
+    if(labels[0]) labels[0].textContent = `账号 ${i+1}`;
+    if(labels[1]) labels[1].textContent = `密码 ${i+1}`;
+  });
+}
+function togglePwd(btn){
+  const input = btn.parentElement.querySelector('input');
+  input.type = input.type === 'password' ? 'text' : 'password';
+}
+
+/* 步数模式切换 */
+function toggleStepMode(){
+  const mode = document.querySelector('input[name="STEP_MODE"]:checked').value;
+  document.getElementById('range-block').style.display = mode === 'range' ? '' : 'none';
+  document.getElementById('fixed-block').style.display = mode === 'fixed' ? '' : 'none';
+  document.getElementById('hours-tip').textContent = mode === 'fixed'
+    ? '⚠ 固定步数模式下只能填一个时间点（填多个逗号分隔的值会被拒绝保存）'
+    : '调度固定按北京时间执行，与服务器时区无关；建议一天多次执行让步数递增';
+  if(mode === 'range') scaleTip();
+}
+
+/* 重新随机执行时间 */
+async function reshuffle(){
+  const form = document.getElementById('cfg-form');
+  const res = await fetch('/reshuffle', {method:'POST', body:new FormData(form)});
+  const data = await res.json();
+  if(data.ok){ show('status','status ok','🎲 已重新随机执行分钟，下次执行：' + data.next); setTimeout(()=>location.reload(), 900); }
+  else show('status','status err','❌ '+(data.error||'操作失败'));
+}
+
+/* 取消/恢复自动执行 */
+async function toggleSchedule(){
+  const btn = document.getElementById('sched-btn');
+  btn.disabled = true;
+  const form = document.getElementById('cfg-form');
+  const res = await fetch('/toggle-schedule', {method:'POST', body:new FormData(form)});
+  const data = await res.json();
+  btn.disabled = false;
+  if(!data.ok){ show('status','status err','❌ '+(data.error||'操作失败')); return; }
+  if(data.enabled){
+    btn.textContent = '⏸ 取消自动执行';
+    btn.classList.remove('resume');
+    show('status','status ok','✅ 自动执行已恢复，定时任务已重新排程');
+  }else{
+    btn.textContent = '▶ 恢复自动执行';
+    btn.classList.add('resume');
+    show('status','status ok','⏸ 已取消自动执行（立即执行仍可手动触发）');
+  }
+  setTimeout(()=>location.reload(), 900);
+}
+
+/* 步数缩放实时提示 */
+function scaleTip(){
+  const chk = document.querySelector('input[name="SCALE_BY_TIME"]');
+  const tip = document.getElementById('scale-tip');
+  const mn = parseInt(document.querySelector('input[name="MIN_STEP"]').value) || 0;
+  const mx = parseInt(document.querySelector('input[name="MAX_STEP"]').value) || 0;
+  if(!chk.checked){ tip.textContent = '当前模式：直接使用填写的范围 ' + mn + ' ~ ' + mx; return; }
+  const now = new Date();
+  const bj = new Date(now.getTime() + now.getTimezoneOffset()*60000 + 8*3600000);
+  const rate = Math.min((bj.getHours()*60 + bj.getMinutes()) / (22*60), 1);
+  const lo = Math.round(mn*rate), hi = Math.round(mx*rate);
+  tip.textContent = `当前模式：填写的范围是 22:00 的峰值；按北京时间 ${String(bj.getHours()).padStart(2,'0')}:${String(bj.getMinutes()).padStart(2,'0')} 执行，实际范围为 ${lo} ~ ${hi}`;
+}
+document.querySelectorAll('input[name="MIN_STEP"],input[name="MAX_STEP"]').forEach(el =>
+  el.addEventListener('input', scaleTip));
+scaleTip();
+toggleStepMode();
+function escapeHtml(s){
+  return String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+    .replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* 初始化已有账号 */
+const savedAccounts = {{ accounts | tojson }};
+(savedAccounts.length ? savedAccounts : [{user:'',pwd:''}]).forEach(a => addAccount(a.user, a.pwd));
+
+/* ---------- 保存 / 执行 / 日志 ---------- */
+function show(el, cls, text){ const s=document.getElementById(el); s.className=cls; s.textContent=text; }
+
+async function saveCfg(){
+  const form = document.getElementById('cfg-form');
+  const res = await fetch('/save', {method:'POST', body:new FormData(form)});
+  const data = await res.json();
+  if(data.ok){ show('status','status ok','✅ 配置已保存，定时任务已更新'); setTimeout(()=>location.reload(), 900); }
+  else show('status','status err','❌ '+(data.error||'保存失败'));
+}
+
+async function postForm(url){
+  const form = document.getElementById('cfg-form');
+  const res = await fetch(url, {method:'POST', body:new FormData(form)});
+  return res.json();
+}
+
+async function runNow(){
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true; btn.textContent = '执行中...';
+  // 先自动保存当前表单，再立即执行
+  const saved = await postForm('/save');
+  if(!saved.ok){
+    show('status','status err','❌ 保存失败：'+(saved.error||'未知错误'));
+    btn.disabled = false; btn.textContent = '▶ 保存并立即执行一次';
+    return;
+  }
+  const data = await postForm('/run');
+  if(data.ok){ show('status','status ok','💾 配置已保存，⏳ '+data.msg); setTimeout(loadLogs, 3000); }
+  else show('status','status err','❌ '+(data.error||'触发失败'));
+  setTimeout(()=>{ btn.disabled=false; btn.textContent='▶ 保存并立即执行一次'; }, 8000);
+}
+
+async function loadLogs(){
+  try{
+    const res = await fetch('/logs');
+    const logs = await res.json();
+    const box = document.getElementById('logs');
+    if(!logs.length){ box.textContent = '暂无执行记录，先保存配置再点「保存并立即执行一次」试试。'; return; }
+    box.innerHTML = logs.map(l => `
+      <div class="log-item">
+        <div class="log-head">${l.time} [${l.trigger}]
+          <span class="badge ${l.success?'ok':'fail'}">${l.success?'成功':'失败'}</span>
+        </div>
+        <div>${l.log ? l.log.replace(/</g,'&lt;') : l.summary}</div>
+      </div>`).join('');
+  }catch(e){
+    document.getElementById('logs').textContent = '日志加载失败';
+  }
+}
+loadLogs();
+</script>
+</body>
+</html>

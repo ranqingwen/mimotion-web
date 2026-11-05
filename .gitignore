@@ -1,0 +1,15 @@
+# 运行时数据（含账号配置、token、日志），不要提交
+data/
+
+# Python
+__pycache__/
+*.pyc
+
+# 开发临时文件
+repo_tmp/
+repo.zip
+mimotion-deploy.zip
+*.log
+
+# 工作区本地文件
+.workbuddy/
