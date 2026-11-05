@@ -63,7 +63,33 @@ services:
 
 > 说明：`build: .` 需要构建上下文（即本项目目录）。所有配置在网页里填写并保存后存于 `data/config.json`，容器重建不丢失。
 
-### 从 GitHub 拉取构建（免上传文件，推荐写法）
+### 使用预构建镜像（ghcr.io，部署最快）
+
+项目通过 GitHub Actions 自动构建并发布镜像到 GitHub Container Registry，直接拉取即可，**无需在服务器上构建**（首次可用）：
+
+```yaml
+services:
+  mimotion-web:
+    image: ghcr.io/ranqingwen/mimotion-web:latest
+    container_name: mimotion-web
+    restart: unless-stopped
+    ports:
+      - "8000:8000"     # 左边是宿主机端口，可自行修改
+    environment:
+      - WEB_USER=admin        # ⚠️ Web 登录用户名，公网部署必改
+      - WEB_PASS=admin123     # ⚠️ Web 登录密码，公网部署必改
+      - TZ=Asia/Shanghai      # 时区
+    volumes:
+      - ./data:/app/data      # 数据持久化（位于编排工作目录下，可用绝对路径指定）
+```
+
+```bash
+docker compose pull && docker compose up -d   # 拉取镜像并启动，几秒完成
+```
+
+> 提示：首次发布后镜像默认为**私有**，需到 GitHub → 头像 → Packages → `mimotion-web` → Package settings → Change visibility 设为 **Public**，他人（包括你的服务器）才能免登录拉取。
+
+### 从 GitHub 拉取构建（免上传文件）
 
 Compose 的 `build:` 支持直接指向 Git 仓库。用 `docker compose` 命令行或任何支持 Compose 编排的环境（NAS 的 Container Manager、可视化容器工具等），将以下内容保存为 `docker-compose.yml` 并启动即可，机器上不需要有任何项目文件（需先确认仓库已公开）：
 
@@ -101,9 +127,12 @@ docker build -t mimotion-web .
 
 只要环境里有 Docker（或 Docker Compose），以下写法都通用：
 
-**方式一：Compose + 从 GitHub 拉取（免上传文件，推荐）**
+**方式一：预构建镜像 / Compose 从 GitHub 拉取（免上传文件）**
 
-将上面「从 GitHub 拉取构建」的 yaml 保存为 `docker-compose.yml`，改好 `WEB_USER` / `WEB_PASS`，然后：
+- 用上面「使用预构建镜像」的 yaml（`image: ghcr.io/...`，拉取即用，最快）
+- 或用「从 GitHub 拉取构建」的 yaml（`build: 仓库地址`，在本地构建）
+
+改好 `WEB_USER` / `WEB_PASS` 后：
 
 - 命令行：`docker compose up -d --build`
 - NAS（群晖 Container Manager、威联通 Container Station 等）：导入该 yaml 创建项目/应用即可
@@ -129,7 +158,6 @@ docker build -t mimotion-web .
 | `WEB_USER` | Web 登录用户名（默认 `admin`，**公网必改**） |
 | `WEB_PASS` | Web 登录密码（默认 `admin123`，**公网必改**） |
 | `TZ` | 时区，默认 `Asia/Shanghai` |
-| `DATA_DIR` | 数据目录，默认 `/app/data`（compose 已挂载 `./data` 卷） |
 
 ### 网页配置项
 
