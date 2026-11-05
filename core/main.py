@@ -39,12 +39,17 @@ def fake_ip():
     return f"{223}.{random.randint(64, 117)}.{random.randint(0, 255)}.{random.randint(0, 255)}"
 
 
-# 账号脱敏
+# 账号脱敏：邮箱保留域名（如 ranqingwen@gmail.com -> ran****@gmail.com），手机号保留前3后4
 def desensitize_user_name(user):
-    if len(user) <= 8:
-        ln = max(math.floor(len(user) / 3), 1)
-        return f'{user[:ln]}***{user[-ln:]}'
-    return f'{user[:3]}****{user[-4:]}'
+    user = str(user)
+    if "@" in user:
+        local, domain = user.split("@", 1)
+        keep = local[:3] if len(local) > 3 else local
+        return f'{keep}****@{domain}'
+    if len(user) > 8:
+        return f'{user[:3]}****{user[-4:]}'
+    ln = max(math.floor(len(user) / 3), 1)
+    return f'{user[:ln]}***{user[-ln:]}'
 
 
 # 获取北京时间
