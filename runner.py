@@ -47,6 +47,19 @@ def _setup_token_cache(m, cfg: dict):
         print("AES_KEY 未设置或无效，本次将直接登录（不缓存 token）")
 
 
+def _remark_names(cfg: dict, m) -> dict:
+    """账号脱敏名 -> 带备注的展示名，如 ran****@gmail.com -> ran****@gmail.com（老婆）"""
+    users = (cfg.get("USER") or "").split("#")
+    remarks = (cfg.get("REMARKS") or "").split("#")
+    mapping = {}
+    for i, u in enumerate(users):
+        masked = m.desensitize_user_name(u.strip())
+        r = remarks[i].strip() if i < len(remarks) else ""
+        if r:
+            mapping[masked] = f"{masked}（{r}）"
+    return mapping
+
+
 def run_once(cfg: dict, trigger: str = "manual") -> dict:
     """执行一次刷步。cfg 为页面表单保存的配置字典。返回日志与结果摘要。"""
     with _run_lock:
@@ -145,6 +158,9 @@ def run_once(cfg: dict, trigger: str = "manual") -> dict:
 
         print(f"[触发方式: {trigger}] {summary}")
         log_text = log_buf.getvalue() + f"\n[{trigger}] {summary}"
+        # 日志中的脱敏账号追加备注，便于区分多个账号
+        for masked, shown in _remark_names(cfg, m).items():
+            log_text = log_text.replace(masked, shown)
         return {"time": started, "trigger": trigger, "success": success,
                 "summary": summary, "log": log_text}
 
@@ -172,6 +188,7 @@ def query_steps(cfg: dict) -> dict:
                             "error": f"账号数[{len(user_list)}]和密码数[{len(passwd_list)}]不匹配",
                             "results": [], "log": ""}
                 gap = float(_int(cfg.get("SLEEP_GAP"), 5))
+                remark_map = _remark_names(cfg, m)
                 for idx, (user_mi, passwd_mi) in enumerate(zip(user_list, passwd_list)):
                     if idx:
                         import time as _t
@@ -179,8 +196,9 @@ def query_steps(cfg: dict) -> dict:
                     runner = m.MiMotionRunner(user_mi, passwd_mi)
                     steps, err, ok = runner.login_and_query_step()
                     print(f"[{idx + 1}/{len(user_list)}] {runner.log_str}")
+                    masked = m.desensitize_user_name(user_mi)
                     results.append({
-                        "user": m.desensitize_user_name(user_mi),
+                        "user": remark_map.get(masked, masked),
                         "steps": steps,
                         "error": err,
                         "success": ok,

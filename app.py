@@ -27,6 +27,7 @@ WEB_PASS = os.environ.get("WEB_PASS", "admin123")
 DEFAULT_CONFIG = {
     "USER": "",
     "PWD": "",
+    "REMARKS": "",
     "MIN_STEP": "18000",
     "MAX_STEP": "25000",
     "SCALE_BY_TIME": "True",
@@ -163,11 +164,13 @@ def dashboard():
     cfg = load_config()
     users = cfg["USER"].split("#") if cfg["USER"].strip() else [""]
     pwds = cfg["PWD"].split("#") if cfg["PWD"].strip() else [""]
+    remarks = cfg.get("REMARKS", "").split("#") if cfg.get("REMARKS", "").strip() else [""]
     # 账号/密码数量对齐
     n = max(len(users), len(pwds))
     users += [""] * (n - len(users))
     pwds += [""] * (n - len(pwds))
-    accounts = [{"user": u, "pwd": p} for u, p in zip(users, pwds)]
+    remarks += [""] * (n - len(remarks))
+    accounts = [{"user": u, "pwd": p, "remark": r} for u, p, r in zip(users, pwds, remarks)]
     return render_template("dashboard.html", cfg=cfg, accounts=accounts, csrf=csrf_token())
 
 
@@ -180,18 +183,24 @@ def save():
     # 动态账号列表：每行一个账号+密码
     users = [u.strip() for u in request.form.getlist("account_user")]
     pwds = [p.strip() for p in request.form.getlist("account_pwd")]
-    rows = [(u, p) for u, p in zip(users, pwds) if u or p]
+    # 备注可选；# 是账号分隔符，备注里不允许出现
+    remarks = [r.strip().replace("#", "；") for r in request.form.getlist("account_remark")]
+    rows = [
+        (u, p, remarks[i] if i < len(remarks) else "")
+        for i, (u, p) in enumerate(zip(users, pwds)) if u or p
+    ]
     errs = []
     if not rows:
         errs.append("至少填写一个账号")
     else:
-        for i, (u, p) in enumerate(rows, 1):
+        for i, (u, p, _r) in enumerate(rows, 1):
             if not u or not p:
                 errs.append(f"第 {i} 个账号的用户名或密码未填完整")
     if errs:
         return jsonify({"ok": False, "error": "；".join(errs)}), 400
-    cfg["USER"] = "#".join(u for u, _ in rows)
-    cfg["PWD"] = "#".join(p for _, p in rows)
+    cfg["USER"] = "#".join(u for u, _, _r in rows)
+    cfg["PWD"] = "#".join(p for _, p, _r in rows)
+    cfg["REMARKS"] = "#".join(r for _, _, r in rows)
     for k in ("MIN_STEP", "MAX_STEP", "HOURS", "SLEEP_GAP", "USE_CONCURRENT",
               "AES_KEY", "PUSH_PLUS_TOKEN", "PUSH_PLUS_HOUR",
               "PUSH_WECHAT_WEBHOOK_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
