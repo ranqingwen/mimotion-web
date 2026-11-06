@@ -2,6 +2,7 @@
 """mimotion 本地 Docker 版 - 带登录的 Web 管理界面"""
 import os
 import json
+import time
 import random
 import secrets
 import threading
@@ -246,6 +247,21 @@ def save():
     return jsonify({"ok": True})
 
 
+# 执行状态（供前端轮询；手动与定时任务共用，finished_ts 为完成事件标记）
+_run_state = {"running": False, "done": False, "success": False, "summary": "",
+              "trigger": "", "finished_ts": 0.0}
+
+
+def _next_run_ts():
+    """下次定时执行的 Unix 时间戳（供前端安排监视窗口）；未排程返回 None"""
+    if load_config().get("SCHEDULE_ENABLED", "True") != "True":
+        return None
+    job = scheduler.get_job("mimotion")
+    if job and job.next_run_time:
+        return job.next_run_time.timestamp()
+    return None
+
+
 @app.route("/run", methods=["POST"])
 @login_required
 def run():
@@ -254,17 +270,35 @@ def run():
     cfg = load_config()
     if not cfg["USER"].strip() or not cfg["PWD"].strip():
         return jsonify({"ok": False, "error": "请先填写账号和密码"}), 400
+    if _run_state["running"]:
+        return jsonify({"ok": False, "error": "上一次执行还没结束，请稍候"}), 400
+    _run_state.update({"running": True, "done": False, "success": False,
+                       "summary": "", "trigger": "手动执行"})
 
     def _job():
         try:
             result = runner.run_once(cfg, trigger="手动执行")
             append_log(result)
+            _run_state.update({"running": False, "done": True,
+                               "success": result.get("success", False),
+                               "summary": result.get("summary", ""),
+                               "trigger": "手动执行",
+                               "finished_ts": time.time()})
         except Exception as e:
             append_log({"time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "trigger": "手动执行", "success": False,
                         "summary": f"后台异常: {e}", "log": ""})
+            _run_state.update({"running": False, "done": True, "success": False,
+                               "summary": f"后台异常: {e}", "trigger": "手动执行",
+                               "finished_ts": time.time()})
     threading.Thread(target=_job, daemon=True).start()
-    return jsonify({"ok": True, "msg": "已开始执行，请稍后刷新日志查看结果"})
+    return jsonify({"ok": True, "msg": "已开始执行，完成后自动更新状态并刷新日志"})
+
+
+@app.route("/run-status")
+@login_required
+def run_status():
+    return jsonify({**_run_state, "next_run_ts": _next_run_ts()})
 
 
 @app.route("/query", methods=["POST"])
@@ -324,6 +358,12 @@ def scheduled_run():
                   "trigger": "定时任务", "success": False,
                   "summary": f"后台异常: {e}", "log": ""}
     append_log(result)
+    # 记录完成事件（前端监视到 finished_ts 变化后自动刷新日志）
+    _run_state.update({"running": False, "done": True,
+                       "success": result.get("success", False),
+                       "summary": result.get("summary", ""),
+                       "trigger": "定时任务",
+                       "finished_ts": time.time()})
     # 执行完后重新随机分钟，避免固定时间被平台风控
     reschedule()
 

@@ -135,7 +135,7 @@
       <h2>🔐 账号配置
         <button type="button" class="btn btn-add" style="margin-left:auto;" onclick="addAccount('','','')">➕ 新增账号</button>
       </h2>
-      <label>小米运动（Zepp Life）账号，手机号或邮箱 <span class="tip">不是小米账号；每个账号一行，账号和密码一一对应；备注可选，仅用于自己区分账号（会显示在执行日志和查询结果里）</span></label>
+      <label>Zepp Life（原小米运动）/ Zepp 账号，手机号或邮箱 <span class="tip">不是小米账号；每个账号一行，账号和密码一一对应；备注可选，仅用于自己区分账号（会显示在执行日志和查询结果里）</span></label>
       <div id="accounts"></div>
     </div>
 
@@ -280,7 +280,7 @@ function addAccount(user, pwd, remark){
     </div>
     <div class="field remark">
       <label>备注 ${acctSeq}</label>
-      <input name="account_remark" value="${escapeHtml(remark)}" placeholder="如 老婆 / 备用">
+      <input name="account_remark" value="${escapeHtml(remark)}" placeholder="如 主用 / 备用">
     </div>
     <button type="button" class="icon-btn" title="删除此账号" onclick="removeAccount(this)">✕</button>`;
   document.getElementById('accounts').appendChild(div);
@@ -401,9 +401,73 @@ async function runNow(){
     return;
   }
   const data = await postForm('/run');
-  if(data.ok){ show('status','status ok','💾 配置已保存，⏳ '+data.msg); setTimeout(loadLogs, 3000); }
-  else show('status','status err','❌ '+(data.error||'触发失败'));
-  setTimeout(()=>{ btn.disabled=false; btn.textContent='▶ 保存并立即执行一次'; }, 8000);
+  if(data.ok){
+    show('status','status ok','💾 配置已保存，⏳ 已开始执行，完成后自动更新状态并刷新日志');
+    await pollRunStatus(btn);
+  }else{
+    show('status','status err','❌ '+(data.error||'触发失败'));
+    btn.disabled = false; btn.textContent = '▶ 保存并立即执行一次';
+  }
+}
+
+/* 轮询执行状态：执行完成后显示结果并自动刷新日志 */
+async function pollRunStatus(btn){
+  // 轮询最长约 3 分钟，超时则恢复按钮
+  for(let i=0;i<120;i++){
+    await new Promise(r=>setTimeout(r,1500));
+    try{
+      const st = await (await fetch('/run-status')).json();
+      if(!st.running){
+        if(st.done){
+          show('status', st.success?'status ok':'status err',
+               (st.success?'✅ 已执行完成：':'⚠️ 执行结束（有失败）：')+st.summary);
+        }
+        loadLogs();
+        break;
+      }
+    }catch(e){ /* 网络抖动时继续轮询 */ }
+  }
+  btn.disabled = false; btn.textContent = '▶ 保存并立即执行一次';
+}
+
+/* ---------- 定时任务监视 ----------
+   平时不轮询；只在下次定时执行点前 30 秒开始轮询（每 1.5 秒一次），
+   检测到执行完成事件后刷新日志、提示结果并停止，然后安排下一个执行点的监视。
+   监视窗口最多约 3 分钟，超时自动停止。 */
+let lastFinishedTs = 0;
+async function watchScheduled(){
+  try{
+    const st = await (await fetch('/run-status')).json();
+    lastFinishedTs = st.finished_ts || 0;
+  }catch(e){}
+  scheduleWatch();
+}
+function scheduleWatch(){
+  fetch('/run-status').then(r=>r.json()).then(st=>{
+    if(!st.next_run_ts) return; // 已取消自动执行或未排程，不再监视
+    // 提前 10 秒进入监视窗口
+    const delay = st.next_run_ts*1000 - Date.now() - 10000;
+    if(delay < -60000){ setTimeout(scheduleWatch, 60000); return; }
+    setTimeout(startWatchLoop, Math.max(delay, 0));
+  }).catch(()=>setTimeout(scheduleWatch, 60000));
+}
+async function startWatchLoop(){
+  // 约 3 分钟上限：1.5 秒 x 120 次
+  for(let i=0;i<120;i++){
+    await new Promise(r=>setTimeout(r,1500));
+    try{
+      const st = await (await fetch('/run-status')).json();
+      if(st.finished_ts && st.finished_ts !== lastFinishedTs){
+        lastFinishedTs = st.finished_ts;
+        show('status', st.success?'status ok':'status err',
+             (st.success?'⏰ '+st.trigger+'已执行完成：':'⚠️ '+st.trigger+'执行结束（有失败）：')+st.summary);
+        loadLogs();
+        scheduleWatch(); // 定时执行完会重新随机分钟，安排下一个执行点
+        return;
+      }
+    }catch(e){}
+  }
+  scheduleWatch(); // 超时未检测到，按新的下次执行点重新安排
 }
 
 async function loadLogs(){
@@ -424,6 +488,7 @@ async function loadLogs(){
   }
 }
 loadLogs();
+watchScheduled();
 
 /* 查询今日步数 */
 async function querySteps(){

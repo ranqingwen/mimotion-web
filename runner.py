@@ -48,7 +48,7 @@ def _setup_token_cache(m, cfg: dict):
 
 
 def _remark_names(cfg: dict, m) -> dict:
-    """账号脱敏名 -> 带备注的展示名，如 ran****@gmail.com -> ran****@gmail.com（老婆）"""
+    """账号脱敏名 -> 带备注的展示名，如 demo****@example.com -> demo****@example.com（主用）"""
     users = (cfg.get("USER") or "").split("#")
     remarks = (cfg.get("REMARKS") or "").split("#")
     mapping = {}
@@ -156,8 +156,12 @@ def run_once(cfg: dict, trigger: str = "manual") -> dict:
             summary = "执行异常：" + traceback.format_exc().splitlines()[-1]
             print(traceback.format_exc())
 
+        # 明细日志同步输出到容器 stdout（docker logs 可见），再输出汇总行
+        detail = log_buf.getvalue()
+        if detail.strip():
+            print(detail)
         print(f"[触发方式: {trigger}] {summary}")
-        log_text = log_buf.getvalue() + f"\n[{trigger}] {summary}"
+        log_text = detail + f"\n[{trigger}] {summary}"
         # 日志中的脱敏账号追加备注，便于区分多个账号
         for masked, shown in _remark_names(cfg, m).items():
             log_text = log_text.replace(masked, shown)
@@ -209,4 +213,8 @@ def query_steps(cfg: dict) -> dict:
             print(traceback.format_exc())
             return {"ok": False, "error": "查询异常：" + traceback.format_exc().splitlines()[-1],
                     "results": results, "log": log_buf.getvalue()}
-        return {"ok": True, "results": results, "log": log_buf.getvalue()}
+        detail = log_buf.getvalue()
+        if detail.strip():
+            # 查询明细也输出到容器 stdout（docker logs 可见）
+            print("[查询今日步数]\n" + detail)
+        return {"ok": True, "results": results, "log": detail}
