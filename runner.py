@@ -7,11 +7,12 @@
 import os
 import sys
 import io
+import re
 import json
 import threading
 import contextlib
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CORE_DIR = os.path.join(BASE_DIR, "core")
@@ -21,7 +22,42 @@ if CORE_DIR not in sys.path:
 _run_lock = threading.Lock()
 
 # 把 token 缓存文件固定到 data 目录（main.py 里用的是相对路径）
-os.chdir(os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data")))
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data"))
+os.chdir(DATA_DIR)
+
+# 当天各账号上次实际刷到的步数（跨天自动失效）
+LAST_STEPS_PATH = os.path.join(DATA_DIR, "last_steps.json")
+
+
+def _bj_today() -> str:
+    return (datetime.utcnow() + timedelta(hours=8)).strftime("%Y-%m-%d")
+
+
+def _load_last_steps() -> dict:
+    """返回当天已执行过的 {账号: 步数}；文件不是今天的则视为空。"""
+    try:
+        with open(LAST_STEPS_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        if data.get("date") == _bj_today():
+            return {k: int(v) for k, v in (data.get("steps") or {}).items()}
+    except Exception:
+        pass
+    return {}
+
+
+def _save_last_steps(steps: dict):
+    try:
+        with open(LAST_STEPS_PATH, "w", encoding="utf-8") as f:
+            json.dump({"date": _bj_today(), "steps": steps},
+                      f, ensure_ascii=False, indent=2)
+    except Exception:
+        print("保存当天步数记录失败：", traceback.format_exc())
+
+
+def _parse_step(msg: str):
+    """从执行结果 '修改步数（12345）[success]' 中解析步数"""
+    m = re.search(r"修改步数（(\d+)）", msg or "")
+    return int(m.group(1)) if m else None
 
 
 def _int(v, default):
@@ -120,6 +156,16 @@ def run_once(cfg: dict, trigger: str = "manual") -> dict:
                     m.max_step = _int(cfg.get("MAX_STEP"), 25000)
                 m.use_concurrent = config.get("USE_CONCURRENT") == "True"
 
+                # 步数只增不减：把当天各账号上次实际刷到的步数作为本次随机下限
+                monotonic = cfg.get("MONOTONIC_STEPS", "True") == "True"
+                last_steps = _load_last_steps() if monotonic else {}
+                if monotonic and cfg.get("STEP_MODE") != "fixed" and last_steps:
+                    m.step_floor = last_steps
+                    print(f"步数只增不减：本次随机下限取当天上次实际步数"
+                          f"（{len(last_steps)} 个账号有记录）")
+                else:
+                    m.step_floor = {}
+
                 if not m.users.strip() or not m.passwords.strip():
                     summary = "账号或密码未填写，跳过执行"
                 else:
@@ -145,6 +191,14 @@ def run_once(cfg: dict, trigger: str = "manual") -> dict:
                                     _t.sleep(m.sleep_seconds)
                         if m.encrypt_support:
                             m.persist_user_tokens()
+                        # 记录本次实际步数，作为当天后续执行的下限
+                        if monotonic and cfg.get("STEP_MODE") != "fixed":
+                            for r in results:
+                                n = _parse_step(r.get("msg")) if r.get("success") else None
+                                if n:
+                                    last_steps[r["user"]] = n
+                            if last_steps:
+                                _save_last_steps(last_steps)
                         ok_count = sum(1 for r in results if r["success"])
                         summary = f"执行账号总数{total}，成功：{ok_count}，失败：{total - ok_count}"
                         success = ok_count == total and total > 0

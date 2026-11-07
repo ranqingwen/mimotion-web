@@ -87,6 +87,10 @@ def get_error_code(location):
     return result[0]
 
 
+# 当日步数下限（由 Web 端注入 {账号: 当天上次实际步数}），用于「步数只增不减」
+step_floor = {}
+
+
 class MiMotionRunner:
     def __init__(self, _user, _passwd):
         self.user_id = None
@@ -199,6 +203,16 @@ class MiMotionRunner:
         app_token = self.login()
         if app_token is None:
             return "登陆失败！", False
+
+        # 步数只增不减：下限取当天上次实际刷到的步数（Web 端注入 step_floor）
+        floor = (step_floor or {}).get(self.user)
+        if floor:
+            try:
+                floor = int(floor)
+                min_step = max(min_step, floor)
+                max_step = max(max_step, floor)
+            except (TypeError, ValueError):
+                pass
 
         step = str(random.randint(min_step, max_step))
         self.log_str += f"已设置为随机步数范围({min_step}~{max_step}) 随机值:{step}\n"

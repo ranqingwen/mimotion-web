@@ -6,8 +6,11 @@ import time
 import random
 import secrets
 import threading
+from datetime import timedelta
 from functools import wraps
 from datetime import datetime
+
+import pytz
 
 from flask import (Flask, session, redirect, url_for, request,
                    render_template, flash, jsonify)
@@ -32,6 +35,7 @@ DEFAULT_CONFIG = {
     "MIN_STEP": "18000",
     "MAX_STEP": "25000",
     "SCALE_BY_TIME": "True",
+    "MONOTONIC_STEPS": "True",
     "STEP_MODE": "range",
     "FIXED_STEP": "",
     "SCHEDULE_ENABLED": "True",
@@ -208,6 +212,7 @@ def save():
         cfg[k] = request.form.get(k, DEFAULT_CONFIG[k]).strip()
     # 复选框：未勾选时表单不会提交该字段
     cfg["SCALE_BY_TIME"] = "True" if request.form.get("SCALE_BY_TIME") == "True" else "False"
+    cfg["MONOTONIC_STEPS"] = "True" if request.form.get("MONOTONIC_STEPS") == "True" else "False"
     # 步数模式：range=范围随机 / fixed=固定步数（互斥）
     cfg["STEP_MODE"] = "fixed" if request.form.get("STEP_MODE") == "fixed" else "range"
     cfg["FIXED_STEP"] = request.form.get("FIXED_STEP", "").strip()
@@ -260,6 +265,10 @@ def _next_run_ts():
     if job and job.next_run_time:
         return job.next_run_time.timestamp()
     return None
+
+
+def _now_bj():
+    return datetime.now(pytz.timezone("Asia/Shanghai"))
 
 
 @app.route("/run", methods=["POST"])
@@ -364,11 +373,15 @@ def scheduled_run():
                        "summary": result.get("summary", ""),
                        "trigger": "定时任务",
                        "finished_ts": time.time()})
-    # 执行完后重新随机分钟，避免固定时间被平台风控
-    reschedule()
+    # 执行完后安排下一个时间点（跳过刚执行的小时，避免同小时重复执行）
+    reschedule(skip_hour=_now_bj().hour)
 
 
-def reschedule():
+def reschedule(skip_hour=None):
+    """排下一次定时执行。
+    skip_hour：定时任务执行完后调用时传入刚执行的小时（北京时间），
+    确保该小时不会因随机分钟落在其后而被再次排程（每个时间点每天只执行一次）。
+    """
     cfg = load_config()
     # 定时被取消时不排程
     if cfg.get("SCHEDULE_ENABLED", "True") != "True":
@@ -379,12 +392,25 @@ def reschedule():
     for h in cfg.get("HOURS", "").split(","):
         h = h.strip()
         if h and h.isdigit() and 0 <= int(h) <= 23:
-            hours.append(h)
+            hours.append(int(h))
     if not hours:
         return
-    minute = random.randint(0, 59)
-    scheduler.add_job(scheduled_run, "cron",
-                      hour=",".join(hours), minute=str(minute),
+    now = _now_bj()
+    run_at = None
+    for h in sorted(set(hours)):
+        if skip_hour is not None and h == skip_hour:
+            continue  # 该时间点刚执行过，不再重复
+        cand = now.replace(hour=h, minute=random.randint(0, 59),
+                           second=0, microsecond=0)
+        if cand > now:
+            run_at = cand
+            break
+    if run_at is None:
+        # 今天的时间点都已过（或刚执行完最后一个）：安排到明天最早的时间点
+        first = min(h for h in hours if h != skip_hour) if len(set(hours)) > 1 else min(hours)
+        run_at = (now + timedelta(days=1)).replace(
+            hour=first, minute=random.randint(0, 59), second=0, microsecond=0)
+    scheduler.add_job(scheduled_run, "date", run_date=run_at,
                       id="mimotion", replace_existing=True)
 
 
