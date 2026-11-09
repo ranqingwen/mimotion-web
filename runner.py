@@ -123,6 +123,8 @@ def run_once(cfg: dict, trigger: str = "manual") -> dict:
                     "PUSH_WECHAT_WEBHOOK_KEY": cfg.get("PUSH_WECHAT_WEBHOOK_KEY", ""),
                     "TELEGRAM_BOT_TOKEN": cfg.get("TELEGRAM_BOT_TOKEN", ""),
                     "TELEGRAM_CHAT_ID": cfg.get("TELEGRAM_CHAT_ID", ""),
+                    "SERVERCHAN_SENDKEY": cfg.get("SERVERCHAN_SENDKEY", ""),
+                    "BARK_KEY": cfg.get("BARK_KEY", ""),
                 }
                 m.config = config
                 m.push_config = push_util.PushConfig(
@@ -132,6 +134,8 @@ def run_once(cfg: dict, trigger: str = "manual") -> dict:
                     push_wechat_webhook_key=config.get("PUSH_WECHAT_WEBHOOK_KEY"),
                     telegram_bot_token=config.get("TELEGRAM_BOT_TOKEN"),
                     telegram_chat_id=config.get("TELEGRAM_CHAT_ID"),
+                    server_chan_sendkey=config.get("SERVERCHAN_SENDKEY"),
+                    bark_key=config.get("BARK_KEY"),
                 )
                 m.sleep_seconds = float(_int(config.get("SLEEP_GAP"), 5))
                 m.users = config.get("USER", "")
@@ -203,7 +207,14 @@ def run_once(cfg: dict, trigger: str = "manual") -> dict:
                         summary = f"执行账号总数{total}，成功：{ok_count}，失败：{total - ok_count}"
                         success = ok_count == total and total > 0
                         try:
-                            push_util.push_results(results, summary, m.push_config)
+                            # 推送里的账号与日志保持一致：脱敏名 + 备注，
+                            # 如 demo****@example.com（主用）
+                            remark_map = _remark_names(cfg, m)
+                            push_list = []
+                            for r in results:
+                                masked = m.desensitize_user_name(r.get("user", ""))
+                                push_list.append(dict(r, user=remark_map.get(masked, masked)))
+                            push_util.push_results(push_list, summary, m.push_config)
                         except Exception:
                             print("推送异常：", traceback.format_exc())
         except Exception:
@@ -221,6 +232,22 @@ def run_once(cfg: dict, trigger: str = "manual") -> dict:
             log_text = log_text.replace(masked, shown)
         return {"time": started, "trigger": trigger, "success": success,
                 "summary": summary, "log": log_text}
+
+
+def test_push(push_cfg: dict):
+    """按页面当前填写的推送配置发一条测试消息，返回各渠道结果。"""
+    from util import push_util
+
+    config = push_util.PushConfig(
+        push_plus_token=push_cfg.get("PUSH_PLUS_TOKEN", ""),
+        push_plus_hour="",  # 测试推送不受「推送整点」限制
+        push_wechat_webhook_key=push_cfg.get("PUSH_WECHAT_WEBHOOK_KEY", ""),
+        telegram_bot_token=push_cfg.get("TELEGRAM_BOT_TOKEN", ""),
+        telegram_chat_id=push_cfg.get("TELEGRAM_CHAT_ID", ""),
+        server_chan_sendkey=push_cfg.get("SERVERCHAN_SENDKEY", ""),
+        bark_key=push_cfg.get("BARK_KEY", ""),
+    )
+    return push_util.push_test(config)
 
 
 def query_steps(cfg: dict) -> dict:

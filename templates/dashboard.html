@@ -20,7 +20,7 @@
   header h1 span { color:#38bdf8; }
   .user-box { display:flex; align-items:center; gap:14px; font-size:13px; color:#94a3b8; flex-wrap:wrap; }
   .user-box a { color:#f87171; text-decoration:none; }
-  main { max-width:860px; margin:28px auto; padding:0 20px; }
+  main { max-width:1080px; margin:28px auto; padding:0 20px; }
   .card {
     background:#1e293b; border:1px solid #334155; border-radius:14px;
     padding:24px; margin-bottom:20px;
@@ -91,10 +91,12 @@
     max-height:420px; overflow:auto; background:#020617;
     border:1px solid #1e293b; border-radius:10px; padding:16px;
     font-family:Consolas, "Courier New", monospace; font-size:12.5px;
-    line-height:1.7; white-space:pre-wrap; color:#a5b4fc;
+    line-height:1.6; color:#a5b4fc;
   }
-  .log-item { margin-bottom:18px; padding-bottom:14px; border-bottom:1px dashed #1e293b; }
-  .log-item:last-child { border-bottom:none; margin-bottom:0; }
+  /* 只有日志正文保留换行；容器不能 pre-wrap，否则模板里的缩进会被渲染成大片空行 */
+  .log-body { white-space:pre-wrap; word-break:break-word; color:#a5b4fc; }
+  .log-item { margin-bottom:14px; padding-bottom:12px; border-bottom:1px dashed #1e293b; }
+  .log-item:last-child { border-bottom:none; margin-bottom:0; padding-bottom:0; }
   .log-head { color:#e2e8f0; font-size:13px; margin-bottom:6px; }
   .badge { padding:2px 10px; border-radius:999px; font-size:11px; margin-left:8px; }
   .badge.ok { background:rgba(22,163,74,.2); color:#4ade80; }
@@ -113,6 +115,34 @@
   .mode-opt b { font-size:13.5px; color:#e2e8f0; }
   .action-card { border:1px solid #38bdf8; box-shadow:0 0 24px rgba(56,189,248,.08); }
   .action-card .actions { margin-top:0; }
+
+  /* ---------- 移动端适配（手机访问） ---------- */
+  @media (max-width:640px){
+    header { padding:12px 14px; }
+    header h1 { font-size:16px; }
+    .user-box { width:100%; gap:6px 12px; font-size:12px; }
+    main { margin:16px auto; padding:0 12px; }
+    .card { padding:16px; border-radius:12px; }
+
+    /* 两列并排的表单在窄屏改为单列 */
+    .row { flex-direction:column; gap:12px; }
+    /* 账号行里的「密码 + 眼睛」保持一行 */
+    .acct-row .field .row { flex-direction:row; gap:6px; }
+
+    /* 账号行：序号 + 删除按钮在同一行，账号/密码/备注各占整行 */
+    .acct-row { display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:center; }
+    .acct-row .num { grid-column:1; grid-row:1; margin:0; }
+    .acct-row > .icon-btn { grid-column:3; grid-row:1; margin:0; }
+    .acct-row .field { grid-column:1 / -1; }
+
+    /* 操作按钮改为全宽纵向排列，避免文字竖排 */
+    .actions { flex-direction:column; align-items:stretch; gap:10px; }
+    .actions .btn { width:100%; }
+
+    .mode-opt { min-width:100%; }
+    .log { font-size:11.5px; padding:12px; max-height:360px; }
+    .next-run { font-size:12px; padding:5px 10px; }
+  }
 </style>
 </head>
 <body>
@@ -209,30 +239,49 @@
 
     <!-- 推送配置 -->
     <div class="card">
-      <h2>📢 推送通知（可选）</h2>
+      <h2>📢 推送通知（可选）<span class="tip" style="font-weight:normal;">每次执行后推送结果；下方「推送整点」对所有渠道生效，留空每次都推</span></h2>
       <div class="row">
         <div>
           <label>PushPlus Token</label>
-          <input name="PUSH_PLUS_TOKEN" value="{{ cfg.PUSH_PLUS_TOKEN }}">
+          <input name="PUSH_PLUS_TOKEN" value="{{ cfg.PUSH_PLUS_TOKEN }}" placeholder="www.pushplus.plus 微信扫码登录后复制">
         </div>
         <div>
-          <label>PushPlus 推送整点</label>
-          <input name="PUSH_PLUS_HOUR" value="{{ cfg.PUSH_PLUS_HOUR }}" placeholder="如 21，留空每次都推">
+          <label>企业微信 Webhook Key</label>
+          <input name="PUSH_WECHAT_WEBHOOK_KEY" value="{{ cfg.PUSH_WECHAT_WEBHOOK_KEY }}" placeholder="企业微信群机器人 Webhook 地址里 key= 后面那串">
         </div>
       </div>
       <div class="row">
         <div>
-          <label>企业微信 Webhook Key</label>
-          <input name="PUSH_WECHAT_WEBHOOK_KEY" value="{{ cfg.PUSH_WECHAT_WEBHOOK_KEY }}">
+          <label>Server酱 SendKey</label>
+          <input name="SERVERCHAN_SENDKEY" value="{{ cfg.SERVERCHAN_SENDKEY }}" placeholder="SCT 开头，sct.ftqq.com 微信扫码登录后复制">
         </div>
         <div>
-          <label>Telegram Bot Token / Chat ID</label>
-          <div class="row">
-            <input name="TELEGRAM_BOT_TOKEN" value="{{ cfg.TELEGRAM_BOT_TOKEN }}" placeholder="Bot Token">
-            <input name="TELEGRAM_CHAT_ID" value="{{ cfg.TELEGRAM_CHAT_ID }}" placeholder="Chat ID">
-          </div>
+          <label>Bark Key 或完整 URL</label>
+          <input name="BARK_KEY" value="{{ cfg.BARK_KEY }}" placeholder="iPhone 装 Bark APP 复制；自建服务可填完整 URL">
         </div>
       </div>
+      <div class="row">
+        <div>
+          <label>Telegram Bot Token</label>
+          <input name="TELEGRAM_BOT_TOKEN" value="{{ cfg.TELEGRAM_BOT_TOKEN }}" placeholder="@BotFather 创建机器人后发放的 Token">
+        </div>
+        <div>
+          <label>Telegram Chat ID</label>
+          <input name="TELEGRAM_CHAT_ID" value="{{ cfg.TELEGRAM_CHAT_ID }}" placeholder="给机器人发消息后从 getUpdates 获取">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>推送整点 <span class="tip">对所有渠道生效</span></label>
+          <input name="PUSH_PLUS_HOUR" value="{{ cfg.PUSH_PLUS_HOUR }}" placeholder="如 21，只在 21 点那次执行推送；留空每次都推">
+        </div>
+        <div></div>
+      </div>
+      <div style="margin-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-query" id="test-push-btn" onclick="testPush()">🔔 测试推送</button>
+        <span class="muted">用当前填写的配置立即发一条测试消息，不需要先保存；未填写的渠道自动跳过，不受「推送整点」限制</span>
+      </div>
+      <div id="test-push-result" style="margin-top:10px;line-height:1.95;"></div>
     </div>
 
     <!-- 操作栏 -->
@@ -395,6 +444,35 @@ async function postForm(url){
   return res.json();
 }
 
+/* 测试推送：用当前表单里填的配置，向各渠道发一条测试消息 */
+async function testPush(){
+  const btn = document.getElementById('test-push-btn');
+  const box = document.getElementById('test-push-result');
+  btn.disabled = true; btn.textContent = '发送中...';
+  box.innerHTML = '<div style="color:#94a3b8;">⏳ 正在发送测试推送…</div>';
+  try{
+    const data = await postForm('/test-push');
+    if(!data.ok){
+      box.innerHTML = '<div style="color:#fca5a5;">❌ ' + escapeHtml(data.error||'发送失败') + '</div>';
+    } else {
+      const icon  = r => r.ok === true ? '✅' : (r.ok === null ? '⚪' : '❌');
+      const color = r => r.ok === true ? '#86efac' : (r.ok === null ? '#94a3b8' : '#fca5a5');
+      const okN   = data.results.filter(r => r.ok === true).length;
+      const failN = data.results.filter(r => r.ok === false).length;
+      const skipN = data.results.filter(r => r.ok === null).length;
+      box.innerHTML = data.results.map(r =>
+        '<div style="color:' + color(r) + ';">' + icon(r) + ' ' +
+        escapeHtml(r.channel) + '：' + escapeHtml(r.msg) + '</div>'
+      ).join('') +
+      '<div style="margin-top:6px;color:#94a3b8;">共 ' + data.results.length +
+      ' 个渠道：成功 ' + okN + '，失败 ' + failN + '，未配置 ' + skipN + '</div>';
+    }
+  }catch(e){
+    box.innerHTML = '<div style="color:#fca5a5;">❌ 请求失败：' + escapeHtml(String(e)) + '</div>';
+  }
+  btn.disabled = false; btn.textContent = '🔔 测试推送';
+}
+
 async function runNow(){
   const btn = document.getElementById('run-btn');
   btn.disabled = true; btn.textContent = '执行中...';
@@ -481,13 +559,7 @@ async function loadLogs(){
     const logs = await res.json();
     const box = document.getElementById('logs');
     if(!logs.length){ box.textContent = '暂无执行记录，先保存配置再点「保存并立即执行一次」试试。'; return; }
-    box.innerHTML = logs.map(l => `
-      <div class="log-item">
-        <div class="log-head">${l.time} [${l.trigger}]
-          <span class="badge ${l.success?'ok':'fail'}">${l.success?'成功':'失败'}</span>
-        </div>
-        <div>${l.log ? l.log.replace(/</g,'&lt;') : l.summary}</div>
-      </div>`).join('');
+    box.innerHTML = logs.map(l => `<div class="log-item"><div class="log-head">${l.time} [${l.trigger}] <span class="badge ${l.success?'ok':'fail'}">${l.success?'成功':'失败'}</span></div><div class="log-body">${(l.log ? l.log : l.summary).replace(/</g,'&lt;').replace(/\n{3,}/g,'\n\n').replace(/^\n+|\n+$/g,'')}</div></div>`).join('');
   }catch(e){
     document.getElementById('logs').textContent = '日志加载失败';
   }

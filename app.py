@@ -48,6 +48,8 @@ DEFAULT_CONFIG = {
     "PUSH_WECHAT_WEBHOOK_KEY": "",
     "TELEGRAM_BOT_TOKEN": "",
     "TELEGRAM_CHAT_ID": "",
+    "SERVERCHAN_SENDKEY": "",
+    "BARK_KEY": "",
 }
 
 app = Flask(__name__)
@@ -208,7 +210,8 @@ def save():
     cfg["REMARKS"] = "#".join(r for _, _, r in rows)
     for k in ("MIN_STEP", "MAX_STEP", "HOURS", "SLEEP_GAP", "USE_CONCURRENT",
               "AES_KEY", "PUSH_PLUS_TOKEN", "PUSH_PLUS_HOUR",
-              "PUSH_WECHAT_WEBHOOK_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
+              "PUSH_WECHAT_WEBHOOK_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
+              "SERVERCHAN_SENDKEY", "BARK_KEY"):
         cfg[k] = request.form.get(k, DEFAULT_CONFIG[k]).strip()
     # 复选框：未勾选时表单不会提交该字段
     cfg["SCALE_BY_TIME"] = "True" if request.form.get("SCALE_BY_TIME") == "True" else "False"
@@ -323,6 +326,23 @@ def query():
         return jsonify(runner.query_steps(cfg))
     except Exception as e:
         return jsonify({"ok": False, "error": f"查询异常: {e}", "results": [], "log": ""}), 500
+
+
+@app.route("/test-push", methods=["POST"])
+@login_required
+def test_push():
+    """按页面当前填写的配置，向各推送渠道发一条测试消息"""
+    if not check_csrf():
+        return jsonify({"ok": False, "error": "CSRF 校验失败"}), 400
+    keys = ("PUSH_PLUS_TOKEN", "PUSH_WECHAT_WEBHOOK_KEY", "TELEGRAM_BOT_TOKEN",
+            "TELEGRAM_CHAT_ID", "SERVERCHAN_SENDKEY", "BARK_KEY")
+    push_cfg = {k: (request.form.get(k) or "").strip() for k in keys}
+    if not any(push_cfg.values()):
+        return jsonify({"ok": False, "error": "还没有填写任何推送配置"}), 400
+    try:
+        return jsonify({"ok": True, "results": runner.test_push(push_cfg)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"测试推送异常: {e}"}), 500
 
 
 @app.route("/logs")

@@ -25,13 +25,17 @@ class PushConfig:
                  push_plus_max=30,
                  push_wechat_webhook_key=None,
                  telegram_bot_token=None,
-                 telegram_chat_id=None):
+                 telegram_chat_id=None,
+                 server_chan_sendkey=None,
+                 bark_key=None):
         self.push_plus_token = push_plus_token
         self.push_plus_hour = push_plus_hour
         self.push_plus_max = int(push_plus_max) if push_plus_max else 30
         self.push_wechat_webhook_key = push_wechat_webhook_key
         self.telegram_bot_token = telegram_bot_token
         self.telegram_chat_id = telegram_chat_id
+        self.server_chan_sendkey = server_chan_sendkey
+        self.bark_key = bark_key
 
 
 def push_plus(token, title, content):
@@ -51,16 +55,19 @@ def push_plus(token, title, content):
         "channel": "wechat"
     }
     try:
-        response = requests.post(requestUrl, data=data)
+        response = requests.post(requestUrl, data=data, timeout=15)
         if response.status_code == 200:
             json_res = response.json()
             print(f"pushplus推送完毕：{json_res['code']}-{json_res['msg']}")
-        else:
-            print("pushplus推送失败")
+            return {"ok": True, "msg": f"{json_res.get('code')}-{json_res.get('msg')}"}
+        print("pushplus推送失败")
+        return {"ok": False, "msg": f"HTTP {response.status_code}"}
     except requests.exceptions.RequestException as e:
         print(f"pushplus推送网络异常: {e}")
+        return {"ok": False, "msg": f"网络异常：{e}"}
     except Exception as e:
         print(f"pushplus推送未知异常: {e}")
+        return {"ok": False, "msg": f"异常：{e}"}
 
 
 def push_wechat_webhook(key, title, content):
@@ -83,19 +90,86 @@ def push_wechat_webhook(key, title, content):
     }
 
     try:
-        response = requests.post(requestUrl, json=payload)
+        response = requests.post(requestUrl, json=payload, timeout=15)
         if response.status_code == 200:
             json_res = response.json()
             if json_res.get('errcode') == 0:
                 print(f"企业微信推送完毕：{json_res['errmsg']}")
-            else:
-                print(f"企业微信推送失败：{json_res.get('errmsg', '未知错误')}")
-        else:
-            print("企业微信推送失败")
+                return {"ok": True, "msg": str(json_res.get('errmsg', 'ok'))}
+            msg = json_res.get('errmsg', '未知错误')
+            print(f"企业微信推送失败：{msg}")
+            return {"ok": False, "msg": f"HTTP 200，errcode={json_res.get('errcode')}：{msg}"}
+        print("企业微信推送失败")
+        return {"ok": False, "msg": f"HTTP {response.status_code}"}
     except requests.exceptions.RequestException as e:
         print(f"企业微信推送异常: {e}")
+        return {"ok": False, "msg": f"网络异常：{e}"}
     except Exception as e:
         print(f"企业微信推送发生未知异常: {e}")
+        return {"ok": False, "msg": f"异常：{e}"}
+
+
+def push_serverchan(send_key, title, content):
+    """
+    推送 Server酱（https://sct.ftqq.com/），推送到微信服务号
+    :param send_key: SCT 开头的 SendKey（微信扫码登录后复制）
+    :param title: 推送标题
+    :param content: 推送内容（markdown）
+    :return: none
+    """
+    requestUrl = f"https://sctapi.ftqq.com/{send_key}.send"
+    data = {"title": title, "desp": content}
+    try:
+        response = requests.post(requestUrl, data=data, timeout=15)
+        if response.status_code == 200:
+            json_res = response.json()
+            if json_res.get('code') == 0:
+                print("Server酱推送完毕")
+                return {"ok": True, "msg": "ok"}
+            msg = json_res.get('message', json_res)
+            print(f"Server酱推送失败：{msg}")
+            return {"ok": False, "msg": f"code={json_res.get('code')}：{msg}"}
+        print(f"Server酱推送失败：HTTP {response.status_code}")
+        return {"ok": False, "msg": f"HTTP {response.status_code}"}
+    except requests.exceptions.RequestException as e:
+        print(f"Server酱推送网络异常: {e}")
+        return {"ok": False, "msg": f"网络异常：{e}"}
+    except Exception as e:
+        print(f"Server酱推送未知异常: {e}")
+        return {"ok": False, "msg": f"异常：{e}"}
+
+
+def push_bark(key_or_url, title, content):
+    """
+    推送 Bark（iPhone APP）
+    :param key_or_url: Bark APP 里复制的 Key，或自建服务的完整 URL（如 https://bark.example.com/abcd）
+    :param title: 推送标题
+    :param content: 推送内容（纯文本）
+    :return: none
+    """
+    value = (key_or_url or '').strip()
+    if value.lower().startswith(('http://', 'https://')):
+        requestUrl = value.rstrip('/')
+    else:
+        requestUrl = f"https://api.day.app/{value}"
+    try:
+        response = requests.post(requestUrl, json={"title": title, "body": content}, timeout=15)
+        if response.status_code == 200:
+            json_res = response.json()
+            if json_res.get('code') == 200:
+                print("Bark推送完毕")
+                return {"ok": True, "msg": "ok"}
+            msg = json_res.get('message', json_res)
+            print(f"Bark推送失败：{msg}")
+            return {"ok": False, "msg": f"code={json_res.get('code')}：{msg}"}
+        print(f"Bark推送失败：HTTP {response.status_code}")
+        return {"ok": False, "msg": f"HTTP {response.status_code}"}
+    except requests.exceptions.RequestException as e:
+        print(f"Bark推送网络异常: {e}")
+        return {"ok": False, "msg": f"网络异常：{e}"}
+    except Exception as e:
+        print(f"Bark推送未知异常: {e}")
+        return {"ok": False, "msg": f"异常：{e}"}
 
 
 def buildWeChatContent(title, content) -> str:
@@ -120,19 +194,22 @@ def push_telegram_bot(bot_token, chat_id, content):
     print(f"post to url: {requestUrl}")
     print(f"payload: {json.dumps(payload)}")
     try:
-        response = requests.post(requestUrl, json=payload)
+        response = requests.post(requestUrl, json=payload, timeout=15)
         if response.status_code == 200:
             json_res = response.json()
             if json_res.get('ok') is True:
                 print(f"telegram bot推送完毕：{json_res['result']['message_id']}")
-            else:
-                print(f"telegram bot推送失败: {json.dumps(json_res)}")
-        else:
-            print(f"telegram bot推送失败: {response.status_code}")
+                return {"ok": True, "msg": "ok"}
+            print(f"telegram bot推送失败: {json.dumps(json_res)}")
+            return {"ok": False, "msg": f"HTTP 200，{json_res.get('description', json.dumps(json_res))}"}
+        print(f"telegram bot推送失败: {response.status_code}")
+        return {"ok": False, "msg": f"HTTP {response.status_code}"}
     except requests.exceptions.RequestException as e:
         print(f"telegram bot推送异常: {e}")
+        return {"ok": False, "msg": f"网络异常：{e}"}
     except Exception as e:
         print(f"telegram bot推送发生未知异常: {e}")
+        return {"ok": False, "msg": f"异常：{e}"}
 
 
 def push_results(exec_results, summary, config: PushConfig):
@@ -142,6 +219,94 @@ def push_results(exec_results, summary, config: PushConfig):
     push_to_push_plus(exec_results, summary, config)
     push_to_wechat_webhook(exec_results, summary, config)
     push_to_telegram_bot(exec_results, summary, config)
+    push_to_serverchan(exec_results, summary, config)
+    push_to_bark(exec_results, summary, config)
+
+
+def push_test(config: PushConfig):
+    """向每个已配置的渠道发送一条测试消息，返回各渠道结果。
+
+    返回 [{"channel": "PushPlus", "ok": True/False/None, "msg": "..."}]
+    ok 为 None 表示该渠道未配置（已跳过）；测试不受「推送整点」限制。
+    """
+    results = []
+    title = f"{format_now()} 推送测试"
+    body = "这是一条来自 mimotion-web 的测试推送，收到即表示该渠道配置可用。"
+
+    def add(channel, ret):
+        results.append({"channel": channel,
+                        "ok": ret.get("ok"), "msg": ret.get("msg", "")})
+
+    token = (config.push_plus_token or "").strip()
+    if token and token != "NO":
+        add("PushPlus", push_plus(token, title, f"<div>{body}</div>"))
+    else:
+        results.append({"channel": "PushPlus", "ok": None, "msg": "未配置，已跳过"})
+
+    key = (config.push_wechat_webhook_key or "").strip()
+    if key and key != "NO":
+        add("企业微信", push_wechat_webhook(key, title, f"## {body}"))
+    else:
+        results.append({"channel": "企业微信", "ok": None, "msg": "未配置，已跳过"})
+
+    sendkey = (config.server_chan_sendkey or "").strip()
+    if sendkey:
+        add("Server酱", push_serverchan(sendkey, title, body))
+    else:
+        results.append({"channel": "Server酱", "ok": None, "msg": "未配置，已跳过"})
+
+    bark = (config.bark_key or "").strip()
+    if bark:
+        add("Bark", push_bark(bark, title, body))
+    else:
+        results.append({"channel": "Bark", "ok": None, "msg": "未配置，已跳过"})
+
+    tg_token = (config.telegram_bot_token or "").strip()
+    tg_chat = (config.telegram_chat_id or "").strip()
+    if tg_token and tg_chat and tg_token != "NO":
+        try:
+            add("Telegram", push_telegram_bot(tg_token, tg_chat, f"<b>{body}</b>"))
+        except Exception as e:
+            add("Telegram", {"ok": False, "msg": f"Chat ID 非法：{e}"})
+    else:
+        results.append({"channel": "Telegram", "ok": None, "msg": "未配置，已跳过"})
+
+    return results
+
+
+def build_plain_content(exec_results, summary, config: PushConfig) -> str:
+    """组装纯文本/markdown 推送内容：汇总 + 每个账号一行"""
+    lines = [summary]
+    if len(exec_results) >= config.push_plus_max:
+        lines.append('- 账号数量过多，详细情况请查看运行日志')
+    else:
+        for exec_result in exec_results:
+            if exec_result.get('success') is True:
+                lines.append(f'- 账号：{exec_result["user"]} 刷步数成功，{exec_result["msg"]}')
+            else:
+                lines.append(f'- 账号：{exec_result["user"]} 刷步数失败，失败原因：{exec_result["msg"]}')
+    return '\n'.join(lines)
+
+
+def push_to_serverchan(exec_results, summary, config: PushConfig):
+    """推送到Server酱"""
+    if config.server_chan_sendkey and config.server_chan_sendkey.strip():
+        content = build_plain_content(exec_results, summary, config)
+        ret = push_serverchan(config.server_chan_sendkey.strip(),
+                              f"{format_now()} 刷步数通知", content)
+        print(f"[推送] Server酱：{'成功' if ret['ok'] else '失败，' + ret['msg']}")
+    else:
+        print("[推送] Server酱：未配置，跳过")
+
+
+def push_to_bark(exec_results, summary, config: PushConfig):
+    """推送到Bark"""
+    if config.bark_key and config.bark_key.strip():
+        content = build_plain_content(exec_results, summary, config)
+        ret = push_bark(config.bark_key.strip(), f"{format_now()} 刷步数通知", content)
+        print(f"[推送] Bark：{'成功' if ret['ok'] else '失败，' + ret['msg']}")
+    else:
+        print("[推送] Bark：未配置，跳过")
 
 
 def not_in_push_time_range(config: PushConfig) -> bool:
@@ -182,7 +347,6 @@ def not_in_push_time_range(config: PushConfig) -> bool:
 
 def push_to_push_plus(exec_results, summary, config: PushConfig):
     """推送到PushPlus"""
-    # 判断是否需要pushplus推送
     if config.push_plus_token and config.push_plus_token != '' and config.push_plus_token != 'NO':
         html = f'<div>{summary}</div>'
         if len(exec_results) >= config.push_plus_max:
@@ -196,9 +360,10 @@ def push_to_push_plus(exec_results, summary, config: PushConfig):
                 else:
                     html += f'<li><span>账号：{exec_result["user"]}</span>刷步数失败，失败原因：{exec_result["msg"]}</li>'
             html += '</ul>'
-        push_plus(config.push_plus_token, f"{format_now()} 刷步数通知", html)
+        ret = push_plus(config.push_plus_token, f"{format_now()} 刷步数通知", html)
+        print(f"[推送] PushPlus：{'成功' if ret['ok'] else '失败，' + ret['msg']}")
     else:
-        print("未配置 PUSH_PLUS_TOKEN 跳过PUSHPLUS推送")
+        print("[推送] PushPlus：未配置，跳过")
 
 
 def push_to_wechat_webhook(exec_results, summary, config: PushConfig):
@@ -216,9 +381,10 @@ def push_to_wechat_webhook(exec_results, summary, config: PushConfig):
                     content += f'\n- 账号：{exec_result["user"]}刷步数成功，接口返回：{exec_result["msg"]}'
                 else:
                     content += f'\n- 账号：{exec_result["user"]}刷步数失败，失败原因：{exec_result["msg"]}'
-        push_wechat_webhook(config.push_wechat_webhook_key, f"{format_now()} 刷步数通知", content)
+        ret = push_wechat_webhook(config.push_wechat_webhook_key, f"{format_now()} 刷步数通知", content)
+        print(f"[推送] 企业微信：{'成功' if ret['ok'] else '失败，' + ret['msg']}")
     else:
-        print("未配置 WECHAT_WEBHOOK_KEY 跳过微信推送")
+        print("[推送] 企业微信：未配置，跳过")
 
 
 def push_to_telegram_bot(exec_results, summary, config: PushConfig):
@@ -236,6 +402,7 @@ def push_to_telegram_bot(exec_results, summary, config: PushConfig):
                     html += f'<pre><blockquote>账号：{exec_result["user"]}</blockquote>刷步数成功，接口返回：<b>{exec_result["msg"]}</b></pre>'
                 else:
                     html += f'<pre><blockquote>账号：{exec_result["user"]}</blockquote>刷步数失败，失败原因：<b>{exec_result["msg"]}</b></pre>'
-        push_telegram_bot(config.telegram_bot_token, config.telegram_chat_id, html)
+        ret = push_telegram_bot(config.telegram_bot_token, config.telegram_chat_id, html)
+        print(f"[推送] Telegram：{'成功' if ret['ok'] else '失败，' + ret['msg']}")
     else:
-        print("未配置 TELEGRAM_BOT_TOKEN 或 TELEGRAM_CHAT_ID 跳过telegram推送")
+        print("[推送] Telegram：未配置，跳过")
