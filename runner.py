@@ -136,6 +136,7 @@ def run_once(cfg: dict, trigger: str = "manual") -> dict:
                     telegram_chat_id=config.get("TELEGRAM_CHAT_ID"),
                     server_chan_sendkey=config.get("SERVERCHAN_SENDKEY"),
                     bark_key=config.get("BARK_KEY"),
+                    trigger=trigger,
                 )
                 m.sleep_seconds = float(_int(config.get("SLEEP_GAP"), 5))
                 m.users = config.get("USER", "")

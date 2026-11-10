@@ -1,4 +1,5 @@
 import json
+import re
 
 import requests
 from datetime import datetime
@@ -27,7 +28,8 @@ class PushConfig:
                  telegram_bot_token=None,
                  telegram_chat_id=None,
                  server_chan_sendkey=None,
-                 bark_key=None):
+                 bark_key=None,
+                 trigger=None):
         self.push_plus_token = push_plus_token
         self.push_plus_hour = push_plus_hour
         self.push_plus_max = int(push_plus_max) if push_plus_max else 30
@@ -36,14 +38,16 @@ class PushConfig:
         self.telegram_chat_id = telegram_chat_id
         self.server_chan_sendkey = server_chan_sendkey
         self.bark_key = bark_key
+        self.trigger = trigger
 
 
-def push_plus(token, title, content):
+def push_plus(token, title, content, template="html"):
     """
-    推送消息类型为html 需要在外部组装html代码的content
+    推送消息，默认 html 模板；传 template="txt" 可按纯文本原样展示（保留换行）
     :param token: PUSHPLUS 的token
     :param title: 推送标题
     :param content: 推送内容
+    :param template: html / txt
     :return: none
     """
     requestUrl = f"http://www.pushplus.plus/send"
@@ -51,7 +55,7 @@ def push_plus(token, title, content):
         "token": token,
         "title": title,
         "content": content,
-        "template": "html",
+        "template": template,
         "channel": "wechat"
     }
     try:
@@ -74,18 +78,20 @@ def push_wechat_webhook(key, title, content):
     """
     推送企业微信通知，WebHook方式，需要注册企业微信并配置机器人到对应的推送群。然后提取对应的key
 
+    使用 text 类型发送，保证多行文本原样展示（markdown 会把单换行合并成一行）
+
     :param key: WebHook机器人的key
     :param title: 推送标题
-    :param content: 推送内容，虽然支持markdown，但是在使用微信插件时，消息不能被完整展示，直接使用纯文本效果会更好
+    :param content: 推送内容（纯文本，保留换行）
     :return:
     """
 
     requestUrl = f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={key}"
 
     payload = {
-        "msgtype": "markdown_v2",
-        "markdown_v2": {
-            "content": buildWeChatContent(title, content)
+        "msgtype": "text",
+        "text": {
+            "content": f"{title}\n{content}"
         }
     }
 
@@ -245,7 +251,7 @@ def push_test(config: PushConfig):
 
     key = (config.push_wechat_webhook_key or "").strip()
     if key and key != "NO":
-        add("企业微信", push_wechat_webhook(key, title, f"## {body}"))
+        add("企业微信", push_wechat_webhook(key, title, body))
     else:
         results.append({"channel": "企业微信", "ok": None, "msg": "未配置，已跳过"})
 
@@ -274,26 +280,74 @@ def push_test(config: PushConfig):
     return results
 
 
-def build_plain_content(exec_results, summary, config: PushConfig) -> str:
-    """组装纯文本/markdown 推送内容：汇总 + 每个账号一行"""
-    lines = [summary]
-    if len(exec_results) >= config.push_plus_max:
-        lines.append('- 账号数量过多，详细情况请查看运行日志')
+def _display_name(user) -> str:
+    """「脱敏账号（备注）」→ 展示名：优先备注，没填备注就用脱敏账号"""
+    u = (user or '').strip()
+    if u.endswith('）') and '（' in u:
+        remark = u.rsplit('（', 1)[1][:-1].strip()
+        if remark:
+            return remark
+    return u
+
+
+def _parse_step(msg):
+    """从 '修改步数（9697）[success]' 里取出步数"""
+    m = re.search(r'修改步数（(\d+)）', msg or '')
+    return m.group(1) if m else None
+
+
+def _escape_html(text) -> str:
+    return (str(text or '').replace('&', '&amp;')
+            .replace('<', '&lt;').replace('>', '&gt;'))
+
+
+def build_push_payload(exec_results, summary, config: PushConfig):
+    """组装推送内容（树形明细版）
+
+    标题：刷步数通知（✅ 3 / ❌ 0）
+    正文：
+    触发: 定时任务 11:43
+
+    账号明细: 共 3 个
+    ├ ✅ 备注名: 9697 步
+    └ ❌ 备注名: 登陆失败！
+
+    :return: (title, body)
+    """
+    total = len(exec_results)
+    ok = sum(1 for r in exec_results if r.get('success') is True)
+    fail = total - ok
+    title = f"刷步数通知（✅ {ok} / ❌ {fail}）"
+
+    trigger = getattr(config, 'trigger', None) or '手动执行'
+    hhmm = get_beijing_time().strftime('%H:%M')
+    lines = [f"触发: {trigger} {hhmm}", "", f"账号明细: 共 {total} 个"]
+
+    if total == 0:
+        lines.append("└ 没有执行任何账号")
+    elif total >= config.push_plus_max:
+        lines.append(f"└ 账号较多（{total} 个），明细请查看执行日志")
     else:
-        for exec_result in exec_results:
-            if exec_result.get('success') is True:
-                lines.append(f'- 账号：{exec_result["user"]} 刷步数成功，{exec_result["msg"]}')
+        for idx, r in enumerate(exec_results):
+            branch = '└' if idx == total - 1 else '├'
+            name = _display_name(r.get('user'))
+            if r.get('success') is True:
+                step = _parse_step(r.get('msg'))
+                detail = f"{step} 步" if step else f"{r.get('msg')}"
+                lines.append(f"{branch} ✅ {name}: {detail}")
             else:
-                lines.append(f'- 账号：{exec_result["user"]} 刷步数失败，失败原因：{exec_result["msg"]}')
-    return '\n'.join(lines)
+                lines.append(f"{branch} ❌ {name}: {r.get('msg')}")
+
+    return title, '\n'.join(lines)
 
 
 def push_to_serverchan(exec_results, summary, config: PushConfig):
     """推送到Server酱"""
     if config.server_chan_sendkey and config.server_chan_sendkey.strip():
-        content = build_plain_content(exec_results, summary, config)
-        ret = push_serverchan(config.server_chan_sendkey.strip(),
-                              f"{format_now()} 刷步数通知", content)
+        title, body = build_push_payload(exec_results, summary, config)
+        # Server酱按 markdown 渲染，用代码块保证换行与对齐不被合并
+        ret = push_serverchan(config.server_chan_sendkey.strip(), title,
+                              f"```\n{body}\n```")
         print(f"[推送] Server酱：{'成功' if ret['ok'] else '失败，' + ret['msg']}")
     else:
         print("[推送] Server酱：未配置，跳过")
@@ -302,8 +356,8 @@ def push_to_serverchan(exec_results, summary, config: PushConfig):
 def push_to_bark(exec_results, summary, config: PushConfig):
     """推送到Bark"""
     if config.bark_key and config.bark_key.strip():
-        content = build_plain_content(exec_results, summary, config)
-        ret = push_bark(config.bark_key.strip(), f"{format_now()} 刷步数通知", content)
+        title, body = build_push_payload(exec_results, summary, config)
+        ret = push_bark(config.bark_key.strip(), title, body)
         print(f"[推送] Bark：{'成功' if ret['ok'] else '失败，' + ret['msg']}")
     else:
         print("[推送] Bark：未配置，跳过")
@@ -348,19 +402,9 @@ def not_in_push_time_range(config: PushConfig) -> bool:
 def push_to_push_plus(exec_results, summary, config: PushConfig):
     """推送到PushPlus"""
     if config.push_plus_token and config.push_plus_token != '' and config.push_plus_token != 'NO':
-        html = f'<div>{summary}</div>'
-        if len(exec_results) >= config.push_plus_max:
-            html += '<div>账号数量过多，详细情况请前往github actions中查看</div>'
-        else:
-            html += '<ul>'
-            for exec_result in exec_results:
-                success = exec_result['success']
-                if success is not None and success is True:
-                    html += f'<li><span>账号：{exec_result["user"]}</span>刷步数成功，接口返回：{exec_result["msg"]}</li>'
-                else:
-                    html += f'<li><span>账号：{exec_result["user"]}</span>刷步数失败，失败原因：{exec_result["msg"]}</li>'
-            html += '</ul>'
-        ret = push_plus(config.push_plus_token, f"{format_now()} 刷步数通知", html)
+        title, body = build_push_payload(exec_results, summary, config)
+        # txt 模板才会原样保留换行，html 模板会把纯文本挤成一段
+        ret = push_plus(config.push_plus_token, title, body, template="txt")
         print(f"[推送] PushPlus：{'成功' if ret['ok'] else '失败，' + ret['msg']}")
     else:
         print("[推送] PushPlus：未配置，跳过")
@@ -370,18 +414,8 @@ def push_to_wechat_webhook(exec_results, summary, config: PushConfig):
     """推送到企业微信"""
     # 判断是否需要微信推送
     if config.push_wechat_webhook_key and config.push_wechat_webhook_key != '' and config.push_wechat_webhook_key != 'NO':
-
-        content = f'## {summary}'
-        if len(exec_results) >= config.push_plus_max:
-            content += '\n- 账号数量过多，详细情况请前往github actions中查看'
-        else:
-            for exec_result in exec_results:
-                success = exec_result['success']
-                if success is not None and success is True:
-                    content += f'\n- 账号：{exec_result["user"]}刷步数成功，接口返回：{exec_result["msg"]}'
-                else:
-                    content += f'\n- 账号：{exec_result["user"]}刷步数失败，失败原因：{exec_result["msg"]}'
-        ret = push_wechat_webhook(config.push_wechat_webhook_key, f"{format_now()} 刷步数通知", content)
+        title, body = build_push_payload(exec_results, summary, config)
+        ret = push_wechat_webhook(config.push_wechat_webhook_key, title, body)
         print(f"[推送] 企业微信：{'成功' if ret['ok'] else '失败，' + ret['msg']}")
     else:
         print("[推送] 企业微信：未配置，跳过")
@@ -392,16 +426,8 @@ def push_to_telegram_bot(exec_results, summary, config: PushConfig):
     # 判断是否需要telegram推送
     if (config.telegram_bot_token and config.telegram_bot_token != '' and config.telegram_bot_token != 'NO' and
             config.telegram_chat_id and config.telegram_chat_id != ''):
-        html = f'<b>{summary}</b>'
-        if len(exec_results) >= config.push_plus_max:
-            html += '<blockquote>账号数量过多，详细情况请前往github actions中查看</blockquote>'
-        else:
-            for exec_result in exec_results:
-                success = exec_result['success']
-                if success is not None and success is True:
-                    html += f'<pre><blockquote>账号：{exec_result["user"]}</blockquote>刷步数成功，接口返回：<b>{exec_result["msg"]}</b></pre>'
-                else:
-                    html += f'<pre><blockquote>账号：{exec_result["user"]}</blockquote>刷步数失败，失败原因：<b>{exec_result["msg"]}</b></pre>'
+        title, body = build_push_payload(exec_results, summary, config)
+        html = f"<b>{_escape_html(title)}</b>\n<pre>{_escape_html(body)}</pre>"
         ret = push_telegram_bot(config.telegram_bot_token, config.telegram_chat_id, html)
         print(f"[推送] Telegram：{'成功' if ret['ok'] else '失败，' + ret['msg']}")
     else:
